@@ -182,3 +182,12 @@ It combines frontend development, backend APIs, relational data, business rules,
 ## Author
 
 Anne Beth Andersen
+
+## Portfolio
+
+This project is the current featured full-stack project in my developer portfolio.
+
+The portfolio also presents the complete development progression, including JavaScript applications, React, Python, C#, REST APIs, SQL, Docker and CI/security workflows.
+
+Portfolio:
+https://abla86.github.io/developer-portfolio/
