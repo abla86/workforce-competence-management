@@ -1,4 +1,4 @@
-﻿using Workforce.Api.DTOs;
+using Workforce.Api.DTOs;
 using Workforce.Api.Models;
 
 namespace Workforce.Api.Services;
@@ -15,8 +15,7 @@ public sealed class CoverageService
 
     public ShiftCoverageResult AnalyzeShift(Shift shift)
     {
-        var staffingCovered =
-            shift.Assignments.Count >= shift.MinimumStaff;
+        var staffingCovered = shift.Assignments.Count >= shift.MinimumStaff;
 
         var requirementResults = shift.Requirements
             .Select(requirement =>
@@ -49,8 +48,7 @@ public sealed class CoverageService
             })
             .ToList();
 
-        var coveredRequirements =
-            requirementResults.Count(x => x.Covered);
+        var coveredRequirements = requirementResults.Count(x => x.Covered);
 
         var competenceCoverage = requirementResults.Count == 0
             ? 100
@@ -61,10 +59,20 @@ public sealed class CoverageService
         var overallCovered =
             staffingCovered && requirementResults.All(x => x.Covered);
 
+        var assignments = shift.Assignments
+            .OrderBy(x => x.Employee.Name)
+            .Select(x => new ShiftAssignmentResult(
+                x.EmployeeId,
+                x.Employee.Name,
+                x.Employee.Role
+            ))
+            .ToList();
+
         return new ShiftCoverageResult(
             shift.Id,
             shift.Date,
             shift.ShiftType,
+            shift.Hours,
             shift.MinimumStaff,
             shift.Assignments.Count,
             staffingCovered,
@@ -73,6 +81,7 @@ public sealed class CoverageService
             competenceCoverage,
             overallCovered,
             overallCovered ? "GOOD" : "ACTION_REQUIRED",
+            assignments,
             requirementResults
         );
     }

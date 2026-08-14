@@ -1,4 +1,4 @@
-﻿namespace Workforce.Api.DTOs;
+namespace Workforce.Api.DTOs;
 
 public sealed record RequirementCoverageResult(
     int CompetenceId,
@@ -10,10 +10,17 @@ public sealed record RequirementCoverageResult(
     string Status
 );
 
+public sealed record ShiftAssignmentResult(
+    int EmployeeId,
+    string Name,
+    string Role
+);
+
 public sealed record ShiftCoverageResult(
     int Id,
     DateOnly Date,
     string ShiftType,
+    decimal Hours,
     int MinimumStaff,
     int AssignedStaff,
     bool StaffingCovered,
@@ -22,5 +29,6 @@ public sealed record ShiftCoverageResult(
     int CompetenceCoverage,
     bool OverallCovered,
     string OverallStatus,
+    IReadOnlyList<ShiftAssignmentResult> Assignments,
     IReadOnlyList<RequirementCoverageResult> Requirements
 );
