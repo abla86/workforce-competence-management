@@ -9,7 +9,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@vitejs/plugin-react": "^5.0.0",
+    "@vitejs/plugin-react": "^6.0.5",
     "vite": "^7.0.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
