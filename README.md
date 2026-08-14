@@ -1,108 +1,184 @@
-# Workforce & Competence Management System
+﻿# Workforce & Competence Management System
 
-A full-stack workforce planning and competence management application.
+Full-stack application for workforce planning, competence management, staffing coverage and gap analysis.
 
-The system is deliberately industry-neutral. It can model staffing and competence requirements in healthcare, municipalities, logistics, industry, IT, HR and other workforce-based environments.
+The system is industry-neutral and demonstrates how employee competence, staffing requirements and operational planning can be combined in one application.
 
-## What it demonstrates
+## Core capabilities
+
+- Employee overview and workforce profiles
+- Competence matrix with proficiency levels
+- Competence validity and review status
+- Shift planning
+- Minimum staffing requirements
+- Competence requirements per shift
+- Automatic staffing gap analysis
+- Automatic competence gap analysis
+- Coverage percentage calculations
+- Clear GREEN / AMBER / RED status indicators
+- Status text in addition to color for accessibility
+- Dashboard for workforce and competence overview
+- Search and filtering
+
+## Technology stack
 
 ### Frontend
-- React + Vite
-- Responsive dashboard
-- Employees
-- Competence matrix
-- Shift planning
-- Gap analysis
-- Search and filtering
-- Accessible status design using both color and text
+
+- React
+- Vite
+- JavaScript
+- Responsive CSS
 
 ### Backend
-- ASP.NET Core Minimal API
+
+- C#
+- .NET 9
+- ASP.NET Core
+- REST API
 - Entity Framework Core
+
+### Data
+
 - SQL Server
-- REST endpoints
-- Business-rule validation
-- Workforce coverage calculations
-- Competence gap analysis
+- Relational data model
+- Employee / competence many-to-many relationships
+- Shift assignments
+- Shift competence requirements
 
 ### Engineering
-- xUnit tests
+
+- xUnit
 - Docker
 - Docker Compose
-- GitHub Actions CI
+- GitHub Actions
 - CodeQL
 - Dependabot
+- Git
+- GitHub
 
-## Status system
+## Architecture
 
-The UI never relies on color alone:
+    React frontend
+          |
+          v
+    ASP.NET Core REST API
+          |
+          v
+    Entity Framework Core
+          |
+          v
+       SQL Server
 
-- GREEN — COVERED / ACTIVE / GOOD
-- AMBER — REVIEW / PARTIAL / ATTENTION
-- RED — MISSING / UNDERSTAFFED / ACTION REQUIRED
+The complete stack can run locally using Docker Compose.
 
-## Project structure
+## Dashboard
 
-```text
-workforce-competence-management/
-├── backend/
-│   ├── Workforce.Api/
-│   └── Workforce.Api.Tests/
-├── frontend/
-├── docker-compose.yml
-└── .github/
-```
+The dashboard summarizes:
+
+- active employees
+- tracked competences
+- overall competence coverage
+- shifts requiring action
+- staffing status
+- competence status
+
+## Status model
+
+The application does not rely on color alone.
+
+- GREEN: GOOD / COVERED / ACTIVE
+- AMBER: ATTENTION / REVIEW DUE
+- RED: ACTION REQUIRED / MISSING / UNDERSTAFFED
+
+This makes operational gaps easy to identify while preserving accessibility.
+
+## Gap analysis
+
+For each shift, the application evaluates both:
+
+1. whether minimum staffing requirements are met
+2. whether required competence is available at the required proficiency level
+
+Example:
+
+    Evening shift
+    Staffing: 3 / 4       UNDERSTAFFED
+    First aid: 2 / 1      COVERED
+    Advanced assessment: 0 / 1   MISSING
+
+The result is summarized as either GOOD or ACTION REQUIRED.
+
+## Automated verification
+
+Backend coverage logic is tested with xUnit.
+
+Verified locally:
+
+- API build succeeds
+- 3/3 backend tests pass
+- frontend lint passes
+- frontend production build passes
+- SQL Server runs successfully in Docker
+- ASP.NET Core API connects to SQL Server through Entity Framework Core
+- React frontend runs successfully through Docker Compose
+
+## Run with Docker Compose
+
+From the repository root:
+
+    docker compose up --build
+
+Frontend:
+
+    http://localhost:8088
+
+API:
+
+    http://localhost:5080
+
+Health endpoint:
+
+    http://localhost:5080/health
+
+Stop the stack:
+
+    docker compose down
 
 ## Local development
 
 ### Backend
 
-The default development connection uses SQL Server LocalDB:
+    cd backend\Workforce.Api
+    dotnet restore
+    dotnet run
 
-```powershell
-cd backend\Workforce.Api
-dotnet restore
-dotnet run
-```
+### Backend tests
 
-The API seeds demo data automatically on first run.
+    dotnet test backend\Workforce.Api.Tests\Workforce.Api.Tests.csproj --configuration Release
 
 ### Frontend
 
-```powershell
-cd frontend
-npm install
-npm run dev
-```
+    cd frontend
+    npm install
+    npm run dev
 
-The frontend expects the API at `http://localhost:5080`.
+### Frontend verification
 
-## Docker Compose
-
-Docker Compose runs:
-
-- SQL Server
-- ASP.NET Core API
-- React/nginx frontend
-
-```powershell
-docker compose up --build
-```
-
-Frontend:
-
-```text
-http://localhost:8088
-```
-
-API:
-
-```text
-http://localhost:5080
-```
+    npm run lint
+    npm run build
 
 ## Demo data
 
-All names and workforce data are fictional.
+All employee and competence data in this repository is fictional demonstration data.
 
-Do not use real personal or sensitive employee information without applying your organization's information-security, privacy, access-control and retention requirements.
+No real employee, patient or sensitive personal information is included.
+
+## Purpose
+
+This project demonstrates full-stack development using a practical workforce-management problem rather than a single technology exercise.
+
+It combines frontend development, backend APIs, relational data, business rules, automated testing, containerization and development automation in one system.
+
+## Author
+
+Anne Beth Andersen
