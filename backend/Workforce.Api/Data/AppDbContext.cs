@@ -9,6 +9,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<Competence> Competences => Set<Competence>();
     public DbSet<EmployeeCompetence> EmployeeCompetences => Set<EmployeeCompetence>();
     public DbSet<EmployeeAvailability> EmployeeAvailability => Set<EmployeeAvailability>();
+    public DbSet<EmployeeStatus> EmployeeStatuses => Set<EmployeeStatus>();
     public DbSet<Absence> Absences => Set<Absence>();
     public DbSet<EmployeeTimeRecord> EmployeeTimeRecords => Set<EmployeeTimeRecord>();
     public DbSet<Shift> Shifts => Set<Shift>();
@@ -21,6 +22,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<ShiftDispensation> ShiftDispensations => Set<ShiftDispensation>();
     public DbSet<CoverageAuditEntry> CoverageAuditEntries => Set<CoverageAuditEntry>();
     public DbSet<PrivacyRequest> PrivacyRequests => Set<PrivacyRequest>();
+    public DbSet<DailyPlan> DailyPlans => Set<DailyPlan>();
+    public DbSet<DailyTaskItem> DailyTaskItems => Set<DailyTaskItem>();
+    public DbSet<DailyPlanAssignment> DailyPlanAssignments => Set<DailyPlanAssignment>();
+    public DbSet<ShiftPlan> ShiftPlans => Set<ShiftPlan>();
+    public DbSet<Notification> Notifications => Set<Notification>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -43,9 +49,20 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         modelBuilder.Entity<Absence>().HasOne(x => x.Employee).WithMany(x => x.Absences).HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<EmployeeTimeRecord>().HasIndex(x => new { x.EmployeeId, x.Year, x.Month }).IsUnique();
         modelBuilder.Entity<EmployeeTimeRecord>().HasOne(x => x.Employee).WithMany(x => x.TimeRecords).HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<EmployeeStatus>().HasKey(x => x.EmployeeId);
+        modelBuilder.Entity<EmployeeStatus>().HasOne(x => x.Employee).WithOne(x => x.Status).HasForeignKey<EmployeeStatus>(x => x.EmployeeId).OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<ShiftDispensation>().HasOne(x => x.Employee).WithMany().HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<ShiftDispensation>().HasOne(x => x.Shift).WithMany().HasForeignKey(x => x.ShiftId).OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<CoverageAuditEntry>().HasOne(x => x.Shift).WithMany(x => x.CoverageAudits).HasForeignKey(x => x.ShiftId).OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<DailyPlan>().HasIndex(x => new { x.DepartmentId, x.PlanDate }).IsUnique();
+        modelBuilder.Entity<DailyTaskItem>().HasOne(x => x.DailyPlan).WithMany(x => x.Tasks).HasForeignKey(x => x.DailyPlanId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<DailyPlanAssignment>().HasOne(x => x.DailyPlan).WithMany(x => x.Assignments).HasForeignKey(x => x.DailyPlanId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<DailyPlanAssignment>().HasOne(x => x.Employee).WithMany().HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<DailyPlanAssignment>().HasOne(x => x.RelatedShift).WithMany().HasForeignKey(x => x.RelatedShiftId).OnDelete(DeleteBehavior.SetNull);
+        modelBuilder.Entity<ShiftPlan>().HasIndex(x => new { x.DepartmentId, x.StartDate, x.EndDate });
+        modelBuilder.Entity<Notification>().HasIndex(x => new { x.EmployeeId, x.CreatedAt });
+        modelBuilder.Entity<Notification>().HasOne(x => x.Employee).WithMany().HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<CoverageAuditEntry>().HasIndex(x => new { x.ShiftId, x.EvaluatedAt });
         modelBuilder.Entity<CoverageAuditEntry>().Property(x => x.Status).HasMaxLength(20).IsRequired();
