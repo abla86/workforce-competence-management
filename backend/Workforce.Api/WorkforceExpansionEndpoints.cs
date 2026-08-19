@@ -9,19 +9,13 @@ public static class WorkforceExpansionEndpoints
 {
     public static void MapWorkforceExpansionEndpoints(this WebApplication app)
     {
-        app.MapPut("/api/employees/{id:int}/availability", async (int id, SetEmployeeAvailabilityRequest request, AppDbContext db) =>
+        app.MapPut("/api/employees/{id:int}/availability", async (int id, SetEmployeeAvailabilityRequest request, AppDbContext db, EmployeeAccessService access, HttpContext http) =>
         {
-            if (!await db.Employees.AnyAsync(x => x.Id == id)) return Results.NotFound();
+            if (!await access.CanAccessEmployeeAsync(http.User, id)) return Results.Forbid();
             var item = await db.EmployeeAvailability.FindAsync(id, request.Date);
             if (item is null)
             {
-                item = new Models.EmployeeAvailability
-                {
-                    EmployeeId = id,
-                    Date = request.Date,
-                    IsAvailable = request.IsAvailable,
-                    Reason = request.Reason.Trim()
-                };
+                item = new Models.EmployeeAvailability { EmployeeId = id, Date = request.Date, IsAvailable = request.IsAvailable, Reason = request.Reason.Trim() };
                 db.EmployeeAvailability.Add(item);
             }
             else
@@ -34,18 +28,16 @@ public static class WorkforceExpansionEndpoints
         })
         .RequireAuthorization("CoverageManage");
 
-        app.MapGet("/api/employees/{id:int}/availability", async (int id, AppDbContext db) =>
+        app.MapGet("/api/employees/{id:int}/availability", async (int id, AppDbContext db, EmployeeAccessService access, HttpContext http) =>
         {
-            if (!await db.Employees.AnyAsync(x => x.Id == id)) return Results.NotFound();
-            return Results.Ok(await db.EmployeeAvailability
-                .Where(x => x.EmployeeId == id)
-                .OrderBy(x => x.Date)
-                .ToListAsync());
+            if (!await access.CanAccessEmployeeAsync(http.User, id)) return Results.Forbid();
+            return Results.Ok(await db.EmployeeAvailability.Where(x => x.EmployeeId == id).OrderBy(x => x.Date).ToListAsync());
         })
         .RequireAuthorization("CoverageRead");
 
-        app.MapDelete("/api/employees/{id:int}/availability/{date}", async (int id, DateOnly date, AppDbContext db) =>
+        app.MapDelete("/api/employees/{id:int}/availability/{date}", async (int id, DateOnly date, AppDbContext db, EmployeeAccessService access, HttpContext http) =>
         {
+            if (!await access.CanAccessEmployeeAsync(http.User, id)) return Results.Forbid();
             var item = await db.EmployeeAvailability.FindAsync(id, date);
             if (item is null) return Results.NotFound();
             db.EmployeeAvailability.Remove(item);
