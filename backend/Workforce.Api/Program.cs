@@ -2,6 +2,8 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Workforce.Api.Data;
+using Workforce.Api.Models;
 using Workforce.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -75,7 +77,10 @@ app.MapGet("/api/shifts/{shiftId:int}/coverage", async (
 {
     try
     {
-        var result = await coverage.EvaluateAsync(shiftId, http.User.Identity?.Name ?? "system", http);
+        var result = await coverage.EvaluateAsync(
+            shiftId,
+            http.User.FindFirst("sub")?.Value ?? http.User.Identity?.Name ?? "unknown",
+            http);
         logger.LogInformation("Coverage evaluated for shift {ShiftId}: {Status}", shiftId, result.Status);
         return Results.Ok(result);
     }
@@ -114,7 +119,9 @@ app.MapPost("/api/shifts/{shiftId:int}/coverage/scenario", async (
 
     shift.Assignments = originalAssignments.Where(a => !removed.Contains(a.EmployeeId)).ToList();
     foreach (var task in shift.ShiftTasks)
-        task.ShiftTaskCoverages = originalCoverages[task.Id].Where(c => !removed.Contains(c.EmployeeId)).ToList();
+        task.ShiftTaskCoverages = originalCoverages[task.Id]
+            .Where(c => !removed.Contains(c.EmployeeId))
+            .ToList();
 
     var result = coverage.Evaluate(shift);
 
@@ -127,7 +134,11 @@ app.MapPost("/api/shifts/{shiftId:int}/coverage/scenario", async (
         .Select(e => new { e.Id, e.Name, e.Role })
         .ToListAsync();
 
-    return Results.Ok(new { coverageWithoutEmployees = result, suggestedReplacements = candidates });
+    return Results.Ok(new
+    {
+        coverageWithoutEmployees = result,
+        suggestedReplacements = candidates
+    });
 })
 .RequireAuthorization("CoverageManage")
 .RequireRateLimiting("coverage")
@@ -139,8 +150,18 @@ app.MapGet("/api/shifts/{shiftId:int}/coverage/history", async (int shiftId, App
         .Where(a => a.ShiftId == shiftId)
         .OrderByDescending(a => a.EvaluatedAt)
         .Take(20)
-        .Select(a => new { a.Id, a.ShiftId, a.EvaluatedAt, a.Status, a.AnonymizedSummary, a.TriggeredBy, a.ClientIp })
+        .Select(a => new
+        {
+            a.Id,
+            a.ShiftId,
+            a.EvaluatedAt,
+            a.Status,
+            a.AnonymizedSummary,
+            a.TriggeredBy,
+            a.ClientIp
+        })
         .ToListAsync();
+
     return Results.Ok(audits);
 })
 .RequireAuthorization("CoverageRead")
