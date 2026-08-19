@@ -87,6 +87,7 @@ public sealed class CoverageEvaluationEngine
         .Include(s => s.Assignments).ThenInclude(a => a.Employee).ThenInclude(e => e.Availability)
         .Include(s => s.ShiftTasks).ThenInclude(st => st.WorkTask).ThenInclude(w => w.Competence)
         .Include(s => s.ShiftTasks).ThenInclude(st => st.ShiftTaskCoverages).ThenInclude(sc => sc.Employee).ThenInclude(e => e.Competences)
+        .Include(s => s.ShiftTasks).ThenInclude(st => st.ShiftTaskCoverages).ThenInclude(sc => sc.Employee).ThenInclude(e => e.Availability)
         .FirstOrDefaultAsync(s => s.Id == shiftId);
 
     private async Task<TaskCoverageDetail> EvaluateTaskAsync(Shift shift, ShiftTask task)
@@ -96,12 +97,18 @@ public sealed class CoverageEvaluationEngine
         foreach (var coverage in task.ShiftTaskCoverages)
         {
             var gaps = ValidateCoverage(shift, task, coverage);
+            if (gaps.Count == 0 && shift.StartTime is not null && shift.EndTime is not null)
+            {
+                if (await HasSchedulingConflictAsync(coverage.EmployeeId, shift))
+                    gaps.Add(new CoverageGap { Type = GapType.DoubleBooked, EmployeeId = coverage.EmployeeId, EmployeeName = coverage.Employee.Name, Description = $"{coverage.Employee.Name} har overlappende vakt" });
+                if (await ViolatesRestAsync(coverage.EmployeeId, shift))
+                    gaps.Add(new CoverageGap { Type = GapType.RestPeriodViolation, EmployeeId = coverage.EmployeeId, EmployeeName = coverage.Employee.Name, Description = $"{coverage.Employee.Name} har mindre enn {DefaultMinimumRestHours} timer hvile" });
+            }
             if (gaps.Count == 0) validCoverages.Add(coverage);
             detail.Gaps.AddRange(gaps);
         }
         detail.Actual = validCoverages.Count;
         if (detail.Actual < detail.Required) detail.Gaps.Add(new CoverageGap { Type = GapType.InsufficientStaff, Description = $"Trenger {detail.Required} kvalifiserte, har {detail.Actual}" });
-        await AddScheduleGapsAsync(shift, validCoverages, detail);
         return detail;
     }
 
@@ -126,16 +133,6 @@ public sealed class CoverageEvaluationEngine
         if (coverage.AuthorizationExpiry.HasValue && coverage.AuthorizationExpiry.Value.Date < shift.Date)
             gaps.Add(new CoverageGap { Type = GapType.AuthorizationExpired, EmployeeId = employee.Id, EmployeeName = employee.Name, Description = $"{employee.Name} sin autorisasjon er utgått" });
         return gaps;
-    }
-
-    private async Task AddScheduleGapsAsync(Shift shift, List<ShiftTaskCoverage> coverages, TaskCoverageDetail detail)
-    {
-        if (shift.StartTime is null || shift.EndTime is null) return;
-        foreach (var coverage in coverages)
-        {
-            if (await HasSchedulingConflictAsync(coverage.EmployeeId, shift)) detail.Gaps.Add(new CoverageGap { Type = GapType.DoubleBooked, EmployeeId = coverage.EmployeeId, EmployeeName = coverage.Employee.Name, Description = $"{coverage.Employee.Name} har overlappende vakt" });
-            if (await ViolatesRestAsync(coverage.EmployeeId, shift)) detail.Gaps.Add(new CoverageGap { Type = GapType.RestPeriodViolation, EmployeeId = coverage.EmployeeId, EmployeeName = coverage.Employee.Name, Description = $"{coverage.Employee.Name} har mindre enn {DefaultMinimumRestHours} timer hvile" });
-        }
     }
 
     private async Task<bool> HasSchedulingConflictAsync(int employeeId, Shift shift)
