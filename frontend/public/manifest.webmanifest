@@ -1,0 +1,10 @@
+{
+  "name": "Vaktklar – Bemanning og kompetanse",
+  "short_name": "Vaktklar",
+  "lang": "nb-NO",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f3f6fa",
+  "theme_color": "#122238",
+  "description": "Handlingsorientert bemannings- og kompetansestyring."
+}
