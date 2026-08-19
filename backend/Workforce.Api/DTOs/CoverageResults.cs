@@ -7,14 +7,11 @@ public sealed record RequirementCoverageResult(
     string MinimumLevel,
     int QualifiedCount,
     bool Covered,
-    string Status
-);
+    string Status,
+    string? RequiredRole = null,
+    bool IsCritical = false);
 
-public sealed record ShiftAssignmentResult(
-    int EmployeeId,
-    string Name,
-    string Role
-);
+public sealed record ShiftAssignmentResult(int EmployeeId, string Name, string Role);
 
 public sealed record ShiftCoverageResult(
     int Id,
@@ -30,5 +27,5 @@ public sealed record ShiftCoverageResult(
     bool OverallCovered,
     string OverallStatus,
     IReadOnlyList<ShiftAssignmentResult> Assignments,
-    IReadOnlyList<RequirementCoverageResult> Requirements
-);
+    IReadOnlyList<RequirementCoverageResult> Requirements,
+    IReadOnlyList<string>? Warnings = null);

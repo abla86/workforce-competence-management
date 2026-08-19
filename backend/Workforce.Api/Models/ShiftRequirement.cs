@@ -8,4 +8,6 @@ public sealed class ShiftRequirement
     public Competence Competence { get; set; } = null!;
     public int MinimumCount { get; set; } = 1;
     public string MinimumLevel { get; set; } = "Basic";
+    public string? RequiredRole { get; set; }
+    public bool IsCritical { get; set; }
 }

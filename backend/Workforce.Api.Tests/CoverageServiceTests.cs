@@ -1,4 +1,4 @@
-﻿using Workforce.Api.Models;
+using Workforce.Api.Models;
 using Workforce.Api.Services;
 using Xunit;
 
@@ -7,87 +7,59 @@ namespace Workforce.Api.Tests;
 public sealed class CoverageServiceTests
 {
     [Fact]
-    public void CoveredShift_ReturnsGood()
+    public void CoveredShift_ReturnsGreen()
     {
         var competence = new Competence { Id = 1, Name = "First aid" };
-        var employee = new Employee
-        {
-            Id = 1,
-            Name = "Test",
-            Competences =
-            [
-                new EmployeeCompetence
-                {
-                    CompetenceId = 1,
-                    Competence = competence,
-                    Level = "Advanced"
-                }
-            ]
-        };
-
+        var employee = new Employee { Id = 1, Name = "Test", Competences = [new EmployeeCompetence { CompetenceId = 1, Competence = competence, Level = "Advanced" }] };
         var shift = new Shift
         {
-            Id = 1,
-            MinimumStaff = 1,
-            Assignments =
-            [
-                new ShiftAssignment { Employee = employee, EmployeeId = 1 }
-            ],
-            Requirements =
-            [
-                new ShiftRequirement
-                {
-                    CompetenceId = 1,
-                    Competence = competence,
-                    MinimumCount = 1,
-                    MinimumLevel = "Intermediate"
-                }
-            ]
+            Id = 1, MinimumStaff = 1,
+            Assignments = [new ShiftAssignment { Employee = employee, EmployeeId = 1 }],
+            Requirements = [new ShiftRequirement { CompetenceId = 1, Competence = competence, MinimumCount = 1, MinimumLevel = "Intermediate" }]
         };
-
         var result = new CoverageService().AnalyzeShift(shift);
-
-        Assert.True((bool)result.OverallCovered);
-        Assert.Equal("GOOD", (string)result.OverallStatus);
+        Assert.True(result.OverallCovered);
+        Assert.Equal("GREEN", result.OverallStatus);
     }
 
     [Fact]
-    public void MissingStaff_ReturnsUnderstaffed()
+    public void MissingStaff_ReturnsRedAndExplainsGap()
     {
-        var shift = new Shift { Id = 1, MinimumStaff = 2 };
-        var result = new CoverageService().AnalyzeShift(shift);
-
-        Assert.False((bool)result.StaffingCovered);
-        Assert.Equal(2, (int)result.MissingStaff);
+        var result = new CoverageService().AnalyzeShift(new Shift { Id = 1, MinimumStaff = 2 });
+        Assert.False(result.StaffingCovered);
+        Assert.Equal(2, result.MissingStaff);
+        Assert.Equal("RED", result.OverallStatus);
+        Assert.Contains(result.Warnings!, x => x.Contains("mangler 2"));
     }
 
     [Fact]
-    public void MissingCompetence_ReturnsActionRequired()
+    public void MissingNonCriticalCompetence_ReturnsRedBecauseMandatoryRequirementIsMissing()
     {
         var competence = new Competence { Id = 1, Name = "Team leadership" };
         var employee = new Employee { Id = 1, Name = "Test" };
-
         var shift = new Shift
         {
             MinimumStaff = 1,
             Assignments = [new ShiftAssignment { Employee = employee, EmployeeId = 1 }],
-            Requirements =
-            [
-                new ShiftRequirement
-                {
-                    CompetenceId = 1,
-                    Competence = competence,
-                    MinimumCount = 1,
-                    MinimumLevel = "Advanced"
-                }
-            ]
+            Requirements = [new ShiftRequirement { CompetenceId = 1, Competence = competence, MinimumCount = 1, MinimumLevel = "Advanced" }]
         };
-
         var result = new CoverageService().AnalyzeShift(shift);
+        Assert.False(result.OverallCovered);
+        Assert.Equal("RED", result.OverallStatus);
+    }
 
-        Assert.False((bool)result.OverallCovered);
-        Assert.Equal("ACTION_REQUIRED", (string)result.OverallStatus);
+    [Fact]
+    public void CriticalRequirementIsMarkedAsCritical()
+    {
+        var competence = new Competence { Id = 1, Name = "Medication" };
+        var shift = new Shift
+        {
+            MinimumStaff = 1,
+            Assignments = [new ShiftAssignment { Employee = new Employee { Id = 1, Name = "Test" }, EmployeeId = 1 }],
+            Requirements = [new ShiftRequirement { CompetenceId = 1, Competence = competence, MinimumCount = 1, MinimumLevel = "Advanced", IsCritical = true }]
+        };
+        var result = new CoverageService().AnalyzeShift(shift);
+        Assert.Contains(result.Warnings!, x => x.Contains("Kritisk kompetanse"));
+        Assert.Equal("RED", result.OverallStatus);
     }
 }
-
-
