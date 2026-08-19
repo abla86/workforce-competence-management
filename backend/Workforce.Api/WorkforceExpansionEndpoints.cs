@@ -46,12 +46,20 @@ public static class WorkforceExpansionEndpoints
         })
         .RequireAuthorization("CoverageManage");
 
-        app.MapGet("/api/shifts/{id:int}/candidates", async (int id, AppDbContext db) =>
+        app.MapGet("/api/shifts/{id:int}/candidates", async (int id, ClaimsPrincipal user, ShiftAccessService access, CoverageEvaluationEngine engine) =>
         {
-            if (!await db.Shifts.AnyAsync(x => x.Id == id)) return Results.NotFound();
-            var matching = new ShiftMatchingService(db);
-            return Results.Ok(await matching.FindCandidatesAsync(id));
+            if (!await access.CanAccessShiftAsync(user, id)) return Results.Forbid();
+            try
+            {
+                return Results.Ok(await engine.FindQualifiedReplacementsAsync(id, []));
+            }
+            catch (ArgumentException ex)
+            {
+                return Results.NotFound(new { message = ex.Message });
+            }
         })
-        .RequireAuthorization("CoverageManage");
+        .RequireAuthorization("CoverageManage")
+        .RequireRateLimiting("coverage")
+        .WithTags("coverage");
     }
 }
