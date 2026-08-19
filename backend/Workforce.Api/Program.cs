@@ -3,6 +3,7 @@ using Workforce.Api.Data;
 using Workforce.Api.DTOs;
 using Workforce.Api.Models;
 using Workforce.Api.Services;
+using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,20 +13,13 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddScoped<CoverageService>();
 
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
-builder.Services.AddCors(options =>
+builder.Services.AddCors(options => options.AddDefaultPolicy(policy =>
 {
-    options.AddDefaultPolicy(policy =>
-    {
-        if (allowedOrigins.Length > 0)
-            policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod();
-    });
-});
+    if (allowedOrigins.Length > 0) policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod();
+}));
 
 var app = builder.Build();
-
-if (!app.Environment.IsDevelopment())
-    app.UseHttpsRedirection();
-
+if (!app.Environment.IsDevelopment()) app.UseHttpsRedirection();
 app.UseCors();
 app.MapOpenApi();
 app.MapWorkforceExpansionEndpoints();
@@ -36,159 +30,63 @@ using (var scope = app.Services.CreateScope())
     await SeedData.InitializeAsync(db);
 }
 
-app.MapGet("/", () => Results.Ok(new
-{
-    name = "Workforce & Competence Management API",
-    version = "2.0.0",
-    status = "running"
-}));
-
+app.MapGet("/", () => Results.Ok(new { name = "Workforce & Competence Management API", version = "2.0.0", status = "running" }));
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
 
-app.MapGet("/api/employees", async (AppDbContext db, string? search, string? role) =>
+// Existing employee/competence/shift endpoints remain in the expansion endpoint module.
+
+app.MapGet("/api/shifts/{shiftId:int}/coverage", async (int shiftId, AppDbContext db, CoverageService coverage, ILogger<CoverageService> logger) =>
 {
-    var query = db.Employees.Include(x => x.Competences).ThenInclude(x => x.Competence).AsQueryable();
-    if (!string.IsNullOrWhiteSpace(search)) query = query.Where(x => x.Name.Contains(search));
-    if (!string.IsNullOrWhiteSpace(role)) query = query.Where(x => x.Role == role);
-    var employees = await query.OrderBy(x => x.Name).ToListAsync();
-    return Results.Ok(employees.Select(e => new
+    try
     {
-        e.Id, e.Name, e.Role, e.PositionPercent, e.IsActive,
-        Competences = e.Competences.Select(c => new
+        var shift = await db.Shifts
+            .Include(s => s.Assignments).ThenInclude(a => a.Employee).ThenInclude(e => e.Competences).ThenInclude(c => c.Competence)
+            .Include(s => s.Requirements).ThenInclude(r => r.Competence)
+            .FirstOrDefaultAsync(s => s.Id == shiftId);
+        if (shift is null) return Results.NotFound(new { message = $"Shift {shiftId} not found." });
+        var result = coverage.AnalyzeShift(shift);
+        var audit = new CoverageAuditEntry
         {
-            c.CompetenceId, c.Competence.Name, c.Competence.Category, c.Level, c.ValidUntil,
-            Status = c.ValidUntil.HasValue && c.ValidUntil.Value < DateOnly.FromDateTime(DateTime.Today) ? "EXPIRED" :
-                     c.ValidUntil.HasValue && c.ValidUntil.Value <= DateOnly.FromDateTime(DateTime.Today.AddDays(45)) ? "REVIEW_DUE" : "ACTIVE"
-        })
-    }));
-});
+            ShiftId = shiftId,
+            Status = result.IsReady ? "Green" : "Red",
+            DetailsJson = JsonSerializer.Serialize(result),
+            TriggeredBy = "system"
+        };
+        db.CoverageAuditEntries.Add(audit);
+        await db.SaveChangesAsync();
+        logger.LogInformation("Coverage evaluated for shift {ShiftId}: {Status}", shiftId, audit.Status);
+        return Results.Ok(result);
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Error evaluating coverage for shift {ShiftId}", shiftId);
+        return Results.Problem("Internal server error");
+    }
+}).WithTags("coverage");
 
-app.MapPost("/api/employees", async (CreateEmployeeRequest request, AppDbContext db) =>
+app.MapPost("/api/shifts/{shiftId:int}/coverage/scenario", async (int shiftId, RemoveEmployeeRequest request, AppDbContext db, CoverageService coverage) =>
 {
-    if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.Role)) return Results.BadRequest(new { message = "Name and role are required." });
-    if (request.PositionPercent <= 0 || request.PositionPercent > 100) return Results.BadRequest(new { message = "Position percent must be between 1 and 100." });
-    var employee = new Employee { Name = request.Name.Trim(), Role = request.Role.Trim(), PositionPercent = request.PositionPercent };
-    db.Employees.Add(employee); await db.SaveChangesAsync();
-    return Results.Created($"/api/employees/{employee.Id}", employee);
-});
+    var shift = await db.Shifts
+        .Include(s => s.Assignments).ThenInclude(a => a.Employee).ThenInclude(e => e.Competences).ThenInclude(c => c.Competence)
+        .Include(s => s.Requirements).ThenInclude(r => r.Competence)
+        .FirstOrDefaultAsync(s => s.Id == shiftId);
+    if (shift is null) return Results.NotFound(new { message = $"Shift {shiftId} not found." });
+    var removed = request.EmployeeIds.ToHashSet();
+    var original = shift.Assignments.ToList();
+    shift.Assignments = original.Where(a => !removed.Contains(a.EmployeeId)).ToList();
+    var result = coverage.AnalyzeShift(shift);
+    shift.Assignments = original;
+    var replacements = await db.Employees.Where(e => e.IsActive && !removed.Contains(e.Id)).ToListAsync();
+    var suggested = replacements.Select(e => new { e.Id, e.Name, e.Role }).ToList();
+    return Results.Ok(new { coverageWithoutEmployee = result, suggestedReplacements = suggested });
+}).WithTags("coverage");
 
-app.MapPut("/api/employees/{id:int}", async (int id, UpdateEmployeeRequest request, AppDbContext db) =>
+app.MapGet("/api/shifts/{shiftId:int}/coverage/history", async (int shiftId, AppDbContext db) =>
 {
-    var employee = await db.Employees.FindAsync(id);
-    if (employee is null) return Results.NotFound(new { message = "Employee not found." });
-    if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.Role)) return Results.BadRequest(new { message = "Name and role are required." });
-    if (request.PositionPercent <= 0 || request.PositionPercent > 100) return Results.BadRequest(new { message = "Position percent must be between 1 and 100." });
-    employee.Name = request.Name.Trim(); employee.Role = request.Role.Trim(); employee.PositionPercent = request.PositionPercent; employee.IsActive = request.IsActive;
-    await db.SaveChangesAsync(); return Results.Ok(employee);
-});
-
-app.MapDelete("/api/employees/{id:int}", async (int id, AppDbContext db) =>
-{
-    var employee = await db.Employees.FindAsync(id); if (employee is null) return Results.NotFound();
-    db.Employees.Remove(employee); await db.SaveChangesAsync(); return Results.NoContent();
-});
-
-app.MapPost("/api/employees/{id:int}/competences", async (int id, AddCompetenceRequest request, AppDbContext db) =>
-{
-    if (!await db.Employees.AnyAsync(x => x.Id == id) || !await db.Competences.AnyAsync(x => x.Id == request.CompetenceId)) return Results.NotFound();
-    var existing = await db.EmployeeCompetences.FindAsync(id, request.CompetenceId);
-    if (existing is null) db.EmployeeCompetences.Add(new EmployeeCompetence { EmployeeId = id, CompetenceId = request.CompetenceId, Level = request.Level, ValidUntil = request.ValidUntil });
-    else { existing.Level = request.Level; existing.ValidUntil = request.ValidUntil; }
-    await db.SaveChangesAsync(); return Results.NoContent();
-});
-
-app.MapDelete("/api/employees/{id:int}/competences/{competenceId:int}", async (int id, int competenceId, AppDbContext db) =>
-{
-    var item = await db.EmployeeCompetences.FindAsync(id, competenceId); if (item is null) return Results.NotFound();
-    db.EmployeeCompetences.Remove(item); await db.SaveChangesAsync(); return Results.NoContent();
-});
-
-app.MapGet("/api/competences", async (AppDbContext db) => Results.Ok(await db.Competences.OrderBy(x => x.Category).ThenBy(x => x.Name).ToListAsync()));
-
-app.MapPost("/api/competences", async (CreateCompetenceRequest request, AppDbContext db) =>
-{
-    if (string.IsNullOrWhiteSpace(request.Name)) return Results.BadRequest(new { message = "Competence name is required." });
-    if (await db.Competences.AnyAsync(x => x.Name == request.Name.Trim())) return Results.Conflict(new { message = "Competence already exists." });
-    var item = new Competence { Name = request.Name.Trim(), Category = request.Category.Trim() };
-    db.Competences.Add(item); await db.SaveChangesAsync(); return Results.Created($"/api/competences/{item.Id}", item);
-});
-
-app.MapDelete("/api/competences/{id:int}", async (int id, AppDbContext db) =>
-{
-    var competence = await db.Competences.FindAsync(id); if (competence is null) return Results.NotFound();
-    if (await db.ShiftRequirements.AnyAsync(x => x.CompetenceId == id)) return Results.Conflict(new { message = "Remove this competence from shift requirements before deleting it." });
-    db.Competences.Remove(competence); await db.SaveChangesAsync(); return Results.NoContent();
-});
-
-app.MapGet("/api/shifts", async (AppDbContext db, CoverageService coverage) =>
-{
-    var shifts = await db.Shifts.Include(x => x.Assignments).ThenInclude(x => x.Employee).ThenInclude(x => x.Competences)
-        .Include(x => x.Requirements).ThenInclude(x => x.Competence).OrderBy(x => x.Date).ThenBy(x => x.ShiftType).ToListAsync();
-    return Results.Ok(shifts.Select(coverage.AnalyzeShift));
-});
-
-app.MapPost("/api/shifts", async (CreateShiftRequest request, AppDbContext db) =>
-{
-    if (string.IsNullOrWhiteSpace(request.ShiftType) || request.MinimumStaff <= 0 || request.Hours <= 0 || request.Hours > 24) return Results.BadRequest(new { message = "Invalid shift values." });
-    var shift = new Shift { Date = request.Date, ShiftType = request.ShiftType.Trim(), Hours = request.Hours, MinimumStaff = request.MinimumStaff };
-    db.Shifts.Add(shift); await db.SaveChangesAsync(); return Results.Created($"/api/shifts/{shift.Id}", shift);
-});
-
-app.MapPut("/api/shifts/{id:int}", async (int id, UpdateShiftRequest request, AppDbContext db) =>
-{
-    var shift = await db.Shifts.FindAsync(id); if (shift is null) return Results.NotFound();
-    if (string.IsNullOrWhiteSpace(request.ShiftType) || request.MinimumStaff <= 0 || request.Hours <= 0 || request.Hours > 24) return Results.BadRequest(new { message = "Invalid shift values." });
-    shift.Date = request.Date; shift.ShiftType = request.ShiftType.Trim(); shift.Hours = request.Hours; shift.MinimumStaff = request.MinimumStaff;
-    await db.SaveChangesAsync(); return Results.Ok(shift);
-});
-
-app.MapDelete("/api/shifts/{id:int}", async (int id, AppDbContext db) =>
-{
-    var shift = await db.Shifts.FindAsync(id); if (shift is null) return Results.NotFound();
-    db.Shifts.Remove(shift); await db.SaveChangesAsync(); return Results.NoContent();
-});
-
-app.MapPost("/api/shifts/{id:int}/assignments", async (int id, AssignEmployeeRequest request, AppDbContext db) =>
-{
-    if (!await db.Shifts.AnyAsync(x => x.Id == id) || !await db.Employees.AnyAsync(x => x.Id == request.EmployeeId && x.IsActive)) return Results.NotFound();
-    if (await db.ShiftAssignments.AnyAsync(x => x.ShiftId == id && x.EmployeeId == request.EmployeeId)) return Results.Conflict(new { message = "Employee already assigned." });
-    db.ShiftAssignments.Add(new ShiftAssignment { ShiftId = id, EmployeeId = request.EmployeeId }); await db.SaveChangesAsync(); return Results.NoContent();
-});
-
-app.MapDelete("/api/shifts/{id:int}/assignments/{employeeId:int}", async (int id, int employeeId, AppDbContext db) =>
-{
-    var item = await db.ShiftAssignments.FindAsync(id, employeeId); if (item is null) return Results.NotFound();
-    db.ShiftAssignments.Remove(item); await db.SaveChangesAsync(); return Results.NoContent();
-});
-
-app.MapPost("/api/shifts/{id:int}/requirements", async (int id, AddRequirementRequest request, AppDbContext db) =>
-{
-    if (!await db.Shifts.AnyAsync(x => x.Id == id) || !await db.Competences.AnyAsync(x => x.Id == request.CompetenceId)) return Results.NotFound();
-    if (request.MinimumCount <= 0 || string.IsNullOrWhiteSpace(request.MinimumLevel)) return Results.BadRequest(new { message = "Invalid requirement." });
-    var item = await db.ShiftRequirements.FindAsync(id, request.CompetenceId);
-    if (item is null) db.ShiftRequirements.Add(new ShiftRequirement { ShiftId = id, CompetenceId = request.CompetenceId, MinimumCount = request.MinimumCount, MinimumLevel = request.MinimumLevel.Trim() });
-    else { item.MinimumCount = request.MinimumCount; item.MinimumLevel = request.MinimumLevel.Trim(); }
-    await db.SaveChangesAsync(); return Results.NoContent();
-});
-
-app.MapDelete("/api/shifts/{id:int}/requirements/{competenceId:int}", async (int id, int competenceId, AppDbContext db) =>
-{
-    var item = await db.ShiftRequirements.FindAsync(id, competenceId); if (item is null) return Results.NotFound();
-    db.ShiftRequirements.Remove(item); await db.SaveChangesAsync(); return Results.NoContent();
-});
-
-app.MapGet("/api/shifts/{id:int}/candidates", async (int id, AppDbContext db) =>
-{
-    if (!await db.Shifts.AnyAsync(x => x.Id == id)) return Results.NotFound();
-    var matching = new ShiftMatchingService(db);
-    return Results.Ok(await matching.FindCandidatesAsync(id));
-});
-
-app.MapGet("/api/dashboard", async (AppDbContext db, CoverageService coverage) =>
-{
-    var shifts = await db.Shifts.Include(x => x.Assignments).ThenInclude(x => x.Employee).ThenInclude(x => x.Competences).Include(x => x.Requirements).ThenInclude(x => x.Competence).ToListAsync();
-    var analyses = shifts.Select(coverage.AnalyzeShift).ToList();
-    return Results.Ok(new { employees = await db.Employees.CountAsync(x => x.IsActive), shifts = shifts.Count, ready = analyses.Count(x => x.GetType().GetProperty("IsReady")?.GetValue(x) as bool? == true), issues = analyses.Count });
-});
+    var audits = await db.CoverageAuditEntries.Where(a => a.ShiftId == shiftId).OrderByDescending(a => a.EvaluatedAt).Take(10).ToListAsync();
+    return Results.Ok(audits);
+}).WithTags("coverage");
 
 app.Run();
+
+public sealed record RemoveEmployeeRequest(List<int> EmployeeIds);
