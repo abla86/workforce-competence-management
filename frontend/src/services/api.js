@@ -1,7 +1,11 @@
 const API = import.meta.env.VITE_API_URL || "http://localhost:5080";
 
 async function request(path, options = {}) {
-  const response = await fetch(`${API}${path}`, { headers: { "Content-Type": "application/json", ...(options.headers || {}) }, ...options });
+  const response = await fetch(`${API}${path}`, {
+    ...options,
+    headers: { Accept: "application/json", "Content-Type": "application/json", ...(options.headers || {}) },
+    credentials: "same-origin",
+  });
   if (!response.ok) {
     let message = `Request failed: ${response.status}`;
     try { const body = await response.json(); message = body.message || message; } catch { /* generic error */ }
@@ -12,7 +16,10 @@ async function request(path, options = {}) {
 }
 
 export const api = {
-  dashboard: () => request("/api/dashboard"), employees: () => request("/api/employees"), competences: () => request("/api/competences"), shifts: () => request("/api/shifts"),
+  dashboard: () => request("/api/dashboard"),
+  employees: () => request("/api/employees"),
+  competences: () => request("/api/competences"),
+  shifts: () => request("/api/shifts"),
   candidates: (shiftId) => request(`/api/shifts/${shiftId}/candidates`),
   createEmployee: (body) => request("/api/employees", { method: "POST", body: JSON.stringify(body) }),
   updateEmployee: (id, body) => request(`/api/employees/${id}`, { method: "PUT", body: JSON.stringify(body) }),
