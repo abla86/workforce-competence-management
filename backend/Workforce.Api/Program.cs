@@ -1,7 +1,10 @@
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using System.Threading.RateLimiting;
 using Workforce.Api.Data;
 using Workforce.Api.DTOs;
 using Workforce.Api.Models;
+using Workforce.Api.Security;
 using Workforce.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -9,13 +12,45 @@ builder.Services.AddOpenApi();
 builder.Services.AddDbContext<AppDbContext>(o => o.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 builder.Services.AddScoped<CoverageService>();
 builder.Services.AddScoped<PlanningAdvisor>();
+builder.Services.AddVaktklarAuthentication(builder.Configuration);
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddFixedWindowLimiter("auth", o =>
+    {
+        o.PermitLimit = 5;
+        o.Window = TimeSpan.FromMinutes(1);
+        o.QueueLimit = 0;
+        o.AutoReplenishment = true;
+    });
+});
 builder.Services.AddCors(o => o.AddDefaultPolicy(p => p
     .WithOrigins(builder.Configuration.GetSection("Cors:Origins").Get<string[]>() ?? ["http://localhost:5173", "http://localhost:8088"])
-    .AllowAnyHeader().AllowAnyMethod()));
+    .AllowAnyHeader().AllowAnyMethod().AllowCredentials()));
 
 var app = builder.Build();
 app.UseCors();
+app.UseAuthentication();
+app.UseAuthorization();
+app.UseRateLimiter();
+
+// All application API endpoints require an authenticated user. Public endpoints are limited to health and authentication/bootstrap.
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/api") && !context.Request.Path.StartsWithSegments("/api/auth"))
+    {
+        if (context.User.Identity?.IsAuthenticated != true)
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            await context.Response.WriteAsJsonAsync(new { message = "Authentication required." });
+            return;
+        }
+    }
+    await next();
+});
+
 app.MapOpenApi();
+app.MapAuthEndpoints();
 
 using (var scope = app.Services.CreateScope())
 {
@@ -23,7 +58,7 @@ using (var scope = app.Services.CreateScope())
     await SeedData.InitializeAsync(db);
 }
 
-app.MapGet("/", () => Results.Ok(new { name = "Workforce & Competence Management API", version = "3.0.0", status = "running" }));
+app.MapGet("/", () => Results.Ok(new { name = "Workforce & Competence Management API", version = "4.0.0", status = "running" }));
 app.MapGet("/health", async (AppDbContext db) =>
 {
     var databaseOk = await db.Database.CanConnectAsync();
