@@ -16,11 +16,13 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<ShiftTask> ShiftTasks => Set<ShiftTask>();
     public DbSet<ShiftTaskCoverage> ShiftTaskCoverages => Set<ShiftTaskCoverage>();
     public DbSet<CoverageAuditEntry> CoverageAuditEntries => Set<CoverageAuditEntry>();
+    public DbSet<PrivacyRequest> PrivacyRequests => Set<PrivacyRequest>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
         modelBuilder.Entity<Employee>().Property(x => x.PositionPercent).HasPrecision(5, 2);
+        modelBuilder.Entity<Employee>().HasIndex(x => x.IdentitySubject).IsUnique();
         modelBuilder.Entity<Shift>().Property(x => x.Hours).HasPrecision(4, 2);
         modelBuilder.Entity<EmployeeCompetence>().HasKey(x => new { x.EmployeeId, x.CompetenceId });
         modelBuilder.Entity<ShiftAssignment>().HasKey(x => new { x.ShiftId, x.EmployeeId });
@@ -43,5 +45,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         modelBuilder.Entity<CoverageAuditEntry>().Property(x => x.AnonymizedSummary).IsRequired();
         modelBuilder.Entity<CoverageAuditEntry>().Property(x => x.EncryptedDetails).IsRequired(false);
         modelBuilder.Entity<CoverageAuditEntry>().Property(x => x.DetailsJson).IsRequired();
+
+        modelBuilder.Entity<PrivacyRequest>().HasIndex(x => new { x.IdentitySubject, x.Type, x.RequestedAt });
+        modelBuilder.Entity<PrivacyRequest>().Property(x => x.IdentitySubject).HasMaxLength(200).IsRequired();
+        modelBuilder.Entity<PrivacyRequest>().Property(x => x.Type).HasMaxLength(40).IsRequired();
+        modelBuilder.Entity<PrivacyRequest>().Property(x => x.Status).HasMaxLength(30).IsRequired();
     }
 }
