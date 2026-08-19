@@ -10,4 +10,5 @@ public sealed class Employee
     public List<EmployeeCompetence> Competences { get; set; } = [];
     public List<ShiftAssignment> ShiftAssignments { get; set; } = [];
     public List<EmployeeAvailability> Availability { get; set; } = [];
+    public List<ShiftTaskCoverage> ShiftTaskCoverages { get; set; } = [];
 }
