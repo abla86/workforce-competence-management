@@ -8,3 +8,4 @@ public sealed record CreateShiftRequest(DateOnly Date, string ShiftType, decimal
 public sealed record UpdateShiftRequest(DateOnly Date, string ShiftType, decimal Hours, int MinimumStaff);
 public sealed record AssignEmployeeRequest(int EmployeeId);
 public sealed record AddRequirementRequest(int CompetenceId, int MinimumCount, string MinimumLevel);
+public sealed record SetEmployeeAvailabilityRequest(DateOnly Date, bool IsAvailable, string Reason);
