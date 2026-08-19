@@ -2,7 +2,6 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Workforce.Api.Data;
-using Workforce.Api.Models;
 using Workforce.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -17,11 +16,11 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    options.AddFixedWindowLimiter("coverage", limiterOptions =>
+    options.AddFixedWindowLimiter("coverage", o =>
     {
-        limiterOptions.PermitLimit = 60;
-        limiterOptions.Window = TimeSpan.FromMinutes(1);
-        limiterOptions.QueueLimit = 0;
+        o.PermitLimit = 60;
+        o.Window = TimeSpan.FromMinutes(1);
+        o.QueueLimit = 0;
     });
 });
 
@@ -51,14 +50,12 @@ app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = Dat
 app.MapGet("/api/shifts/{shiftId:int}/coverage", async (
     int shiftId,
     CoverageService coverage,
-    AuditProtectionService protection,
     HttpContext http,
     ILogger<CoverageService> logger) =>
 {
     try
     {
-        var result = await coverage.EvaluateAsync(shiftId, "system");
-        // CoverageService owns persistence. This endpoint intentionally does not write a second audit row.
+        var result = await coverage.EvaluateAsync(shiftId, "system", http);
         logger.LogInformation("Coverage evaluated for shift {ShiftId}: {Status}", shiftId, result.Status);
         return Results.Ok(result);
     }
@@ -92,9 +89,7 @@ app.MapPost("/api/shifts/{shiftId:int}/coverage/scenario", async (
 
     var removed = request.EmployeeIds.ToHashSet();
     var originalAssignments = shift.Assignments.ToList();
-    var originalCoverages = shift.ShiftTasks.ToDictionary(
-        t => t.Id,
-        t => t.ShiftTaskCoverages.ToList());
+    var originalCoverages = shift.ShiftTasks.ToDictionary(t => t.Id, t => t.ShiftTaskCoverages.ToList());
 
     shift.Assignments = originalAssignments.Where(a => !removed.Contains(a.EmployeeId)).ToList();
     foreach (var task in shift.ShiftTasks)
@@ -122,16 +117,7 @@ app.MapGet("/api/shifts/{shiftId:int}/coverage/history", async (int shiftId, App
         .Where(a => a.ShiftId == shiftId)
         .OrderByDescending(a => a.EvaluatedAt)
         .Take(20)
-        .Select(a => new
-        {
-            a.Id,
-            a.ShiftId,
-            a.EvaluatedAt,
-            a.Status,
-            a.AnonymizedSummary,
-            a.TriggeredBy,
-            a.ClientIp
-        })
+        .Select(a => new { a.Id, a.ShiftId, a.EvaluatedAt, a.Status, a.AnonymizedSummary, a.TriggeredBy, a.ClientIp })
         .ToListAsync();
     return Results.Ok(audits);
 })
