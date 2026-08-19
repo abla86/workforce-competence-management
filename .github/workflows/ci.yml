@@ -2,9 +2,9 @@ name: Full Stack CI
 
 on:
   push:
-    branches: [ "main", "feature/vaktklar-production" ]
+    branches: [ "main", "feature/vaktklar-production", "feature/vaktklar-complete" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "feature/vaktklar-production" ]
   workflow_dispatch:
 
 permissions:
