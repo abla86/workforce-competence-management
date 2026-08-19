@@ -90,7 +90,7 @@ export default function App() {
   } else if (page === "gaps") {
     content = <GapAnalysis shifts={shifts} />;
   } else {
-    content = <Dashboard data={dashboard} />;
+    content = <Dashboard data={dashboard} employees={employees} />;
   }
 
   return (
