@@ -34,7 +34,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter();
 
-// All application API endpoints require an authenticated user. Public endpoints are limited to health and authentication/bootstrap.
 app.Use(async (context, next) =>
 {
     if (context.Request.Path.StartsWithSegments("/api") && !context.Request.Path.StartsWithSegments("/api/auth"))
@@ -153,7 +152,7 @@ app.MapGet("/api/shifts/{id:int}/coverage", async (int id, AppDbContext db, Cove
 
 app.MapPost("/api/shifts/{id:int}/coverage/scenario", async (int id, CoverageScenarioRequest request, AppDbContext db, CoverageService coverage, HttpContext http) =>
 {
-    if (request.RemoveEmployeeIds is null || request.RemoveEmployeeIds.Count == 0)
+    if (request.RemoveEmployeeIds.Count == 0)
         return Results.BadRequest(new { message = "At least one employee ID must be supplied." });
     try
     {
@@ -274,6 +273,6 @@ static async Task Audit(AppDbContext db, string action, string entityType, strin
     await db.SaveChangesAsync();
 }
 
-public sealed record CoverageScenarioRequest(IReadOnlyList<int> RemoveEmployeeIds);
+public sealed record CoverageScenarioRequest(List<int> RemoveEmployeeIds);
 
 public partial class Program { }
