@@ -35,7 +35,8 @@ public enum GapType
     UnauthorizedRole,
     DoubleBooked,
     RestPeriodViolation,
-    EmployeeUnavailable
+    EmployeeUnavailable,
+    InvalidCoverage
 }
 
 public enum CoverageStatus
