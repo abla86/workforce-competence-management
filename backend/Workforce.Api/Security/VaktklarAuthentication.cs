@@ -1,7 +1,9 @@
+using System.Globalization;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
@@ -9,6 +11,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Workforce.Api.Data;
 using Workforce.Api.Models;
+using Workforce.Api.Services;
 
 namespace Workforce.Api.Security;
 
@@ -111,6 +114,8 @@ internal sealed class RoleGuardStartupFilter : IStartupFilter
     {
         app.Use(async (context, nextRequest) =>
         {
+            if (await TryHandleDataExchangeAsync(context)) return;
+
             if (context.Request.Path.StartsWithSegments("/api") && !context.Request.Path.StartsWithSegments("/api/auth") && context.Request.Method is "POST" or "PUT" or "DELETE" or "PATCH")
             {
                 var auth = await context.AuthenticateAsync(JwtBearerDefaults.AuthenticationScheme);
@@ -126,6 +131,177 @@ internal sealed class RoleGuardStartupFilter : IStartupFilter
         });
         next(app);
     };
+
+    private static async Task<bool> TryHandleDataExchangeAsync(HttpContext context)
+    {
+        var path = context.Request.Path.Value ?? "";
+        if (!path.StartsWith("/api/export/", StringComparison.OrdinalIgnoreCase) &&
+            !path.StartsWith("/api/import/", StringComparison.OrdinalIgnoreCase) &&
+            !path.StartsWith("/api/share/", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var auth = await context.AuthenticateAsync(JwtBearerDefaults.AuthenticationScheme);
+        if (!auth.Succeeded)
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return true;
+        }
+
+        var db = context.RequestServices.GetRequiredService<AppDbContext>();
+        var coverage = context.RequestServices.GetRequiredService<CoverageService>();
+
+        if (HttpMethods.IsGet(context.Request.Method) && path.Equals("/api/export/employees.csv", StringComparison.OrdinalIgnoreCase))
+        {
+            var employees = await db.Employees.AsNoTracking().OrderBy(e => e.Name).ToListAsync();
+            var sb = new StringBuilder("Name,Role,Department,Authorization,PositionPercent,MaxWeeklyHours,IsActive\n");
+            foreach (var e in employees) sb.AppendLine(string.Join(',', Csv(e.Name), Csv(e.Role), Csv(e.Department), Csv(e.Authorization), e.PositionPercent.ToString(CultureInfo.InvariantCulture), e.MaxWeeklyHours.ToString(CultureInfo.InvariantCulture), e.IsActive ? "true" : "false"));
+            await FileResponse(context, sb.ToString(), "text/csv; charset=utf-8", "vaktklar-ansatte.csv");
+            return true;
+        }
+
+        if (HttpMethods.IsGet(context.Request.Method) && path.Equals("/api/export/competences.csv", StringComparison.OrdinalIgnoreCase))
+        {
+            var rows = await db.EmployeeCompetences.AsNoTracking().Include(x => x.Employee).Include(x => x.Competence).OrderBy(x => x.Employee.Name).ThenBy(x => x.Competence.Name).ToListAsync();
+            var sb = new StringBuilder("EmployeeName,CompetenceName,Level,ValidUntil\n");
+            foreach (var x in rows) sb.AppendLine(string.Join(',', Csv(x.Employee.Name), Csv(x.Competence.Name), x.Level.ToString(CultureInfo.InvariantCulture), x.ValidUntil?.ToString("yyyy-MM-dd") ?? ""));
+            await FileResponse(context, sb.ToString(), "text/csv; charset=utf-8", "vaktklar-kompetanse.csv");
+            return true;
+        }
+
+        if (HttpMethods.IsGet(context.Request.Method) && path.Equals("/api/export/shifts.xls", StringComparison.OrdinalIgnoreCase))
+        {
+            var shifts = await db.Shifts.AsNoTracking().Include(s => s.Assignments).ThenInclude(a => a.Employee).Include(s => s.Requirements).ThenInclude(r => r.Competence).OrderBy(s => s.Date).ThenBy(s => s.StartTime).ToListAsync();
+            var html = BuildShiftHtml(shifts, coverage);
+            await FileResponse(context, html, "application/vnd.ms-excel", "vaktklar-vaktplan.xls");
+            return true;
+        }
+
+        if (HttpMethods.IsGet(context.Request.Method) && path.Equals("/api/export/backup.json", StringComparison.OrdinalIgnoreCase))
+        {
+            var employees = await db.Employees.AsNoTracking().Include(e => e.Competences).ThenInclude(c => c.Competence).ToListAsync();
+            var competences = await db.Competences.AsNoTracking().ToListAsync();
+            var shifts = await db.Shifts.AsNoTracking().Include(s => s.Assignments).Include(s => s.Requirements).ToListAsync();
+            var payload = JsonSerializer.Serialize(new { exportedAtUtc = DateTime.UtcNow, version = "vaktklar-backup-1", employees, competences, shifts }, new JsonSerializerOptions { WriteIndented = true });
+            await FileResponse(context, payload, "application/json", "vaktklar-backup.json");
+            return true;
+        }
+
+        if (HttpMethods.IsGet(context.Request.Method) && path.Equals("/api/share/shiftplan", StringComparison.OrdinalIgnoreCase))
+        {
+            var shifts = await db.Shifts.AsNoTracking().Include(s => s.Assignments).ThenInclude(a => a.Employee).Include(s => s.Requirements).ThenInclude(r => r.Competence).OrderBy(s => s.Date).ThenBy(s => s.StartTime).ToListAsync();
+            var html = BuildShiftHtml(shifts, coverage);
+            context.Response.ContentType = "text/html; charset=utf-8";
+            context.Response.Headers.ContentDisposition = "inline; filename=\"vaktklar-vaktplan.html\"";
+            await context.Response.WriteAsync(html);
+            return true;
+        }
+
+        if (HttpMethods.IsPost(context.Request.Method) && path.Equals("/api/import/employees.csv", StringComparison.OrdinalIgnoreCase))
+        {
+            await ImportEmployeesAsync(context, db);
+            return true;
+        }
+
+        if (HttpMethods.IsPost(context.Request.Method) && path.Equals("/api/import/competences.csv", StringComparison.OrdinalIgnoreCase))
+        {
+            await ImportCompetencesAsync(context, db);
+            return true;
+        }
+
+        context.Response.StatusCode = StatusCodes.Status404NotFound;
+        return true;
+    }
+
+    private static async Task ImportEmployeesAsync(HttpContext context, AppDbContext db)
+    {
+        if (!context.Request.HasFormContentType) { await context.Response.WriteAsJsonAsync(new { message = "Send CSV as multipart/form-data with field 'file'." }, statusCode: 400); return; }
+        var form = await context.Request.ReadFormAsync(); var file = form.Files.GetFile("file");
+        if (file is null || file.Length == 0 || file.Length > 5 * 1024 * 1024) { await context.Response.WriteAsJsonAsync(new { message = "CSV file is required and must be <= 5 MB." }, statusCode: 400); return; }
+        using var reader = new StreamReader(file.OpenReadStream(), Encoding.UTF8, true); var rows = ParseCsv(await reader.ReadToEndAsync()).ToList();
+        if (rows.Count < 2) { await context.Response.WriteAsJsonAsync(new { message = "CSV must contain a header and data." }, statusCode: 400); return; }
+        var headers = rows[0].Select(x => x.Trim()).ToArray(); var index = headers.Select((name, i) => (name, i)).ToDictionary(x => x.name, x => x.i, StringComparer.OrdinalIgnoreCase);
+        if (!index.ContainsKey("Name") || !index.ContainsKey("Role")) { await context.Response.WriteAsJsonAsync(new { message = "CSV must contain Name and Role columns." }, statusCode: 400); return; }
+        var created = 0; var updated = 0; var errors = new List<object>();
+        for (var r = 1; r < rows.Count; r++)
+        {
+            var row = rows[r]; string Get(string n) => index.TryGetValue(n, out var i) && i < row.Count ? row[i].Trim() : "";
+            var name = Get("Name"); var role = Get("Role"); var department = Get("Department");
+            if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(role)) { errors.Add(new { row = r + 1, message = "Name and Role are required." }); continue; }
+            var employee = await db.Employees.FirstOrDefaultAsync(e => e.Name == name && e.Role == role && e.Department == department);
+            if (employee is null) { employee = new Employee { Name = name, Role = role, Department = department }; db.Employees.Add(employee); created++; } else updated++;
+            employee.Authorization = NullIfEmpty(Get("Authorization"));
+            employee.PositionPercent = ParseDecimal(Get("PositionPercent"), 100m);
+            employee.MaxWeeklyHours = ParseDecimal(Get("MaxWeeklyHours"), 37.5m);
+            employee.IsActive = !bool.TryParse(Get("IsActive"), out var active) || active;
+        }
+        await db.SaveChangesAsync(); await context.Response.WriteAsJsonAsync(new { created, updated, errors });
+    }
+
+    private static async Task ImportCompetencesAsync(HttpContext context, AppDbContext db)
+    {
+        if (!context.Request.HasFormContentType) { await context.Response.WriteAsJsonAsync(new { message = "Send CSV as multipart/form-data with field 'file'." }, statusCode: 400); return; }
+        var form = await context.Request.ReadFormAsync(); var file = form.Files.GetFile("file");
+        if (file is null || file.Length == 0 || file.Length > 5 * 1024 * 1024) { await context.Response.WriteAsJsonAsync(new { message = "CSV file is required and must be <= 5 MB." }, statusCode: 400); return; }
+        using var reader = new StreamReader(file.OpenReadStream(), Encoding.UTF8, true); var rows = ParseCsv(await reader.ReadToEndAsync()).ToList();
+        if (rows.Count < 2) { await context.Response.WriteAsJsonAsync(new { message = "CSV must contain a header and data." }, statusCode: 400); return; }
+        var headers = rows[0].Select(x => x.Trim()).ToArray(); var index = headers.Select((name, i) => (name, i)).ToDictionary(x => x.name, x => x.i, StringComparer.OrdinalIgnoreCase);
+        if (!index.ContainsKey("EmployeeName") || !index.ContainsKey("CompetenceName")) { await context.Response.WriteAsJsonAsync(new { message = "CSV must contain EmployeeName and CompetenceName columns." }, statusCode: 400); return; }
+        var created = 0; var updated = 0; var errors = new List<object>();
+        for (var r = 1; r < rows.Count; r++)
+        {
+            var row = rows[r]; string Get(string n) => index.TryGetValue(n, out var i) && i < row.Count ? row[i].Trim() : "";
+            var employeeName = Get("EmployeeName"); var competenceName = Get("CompetenceName");
+            var employee = await db.Employees.FirstOrDefaultAsync(e => e.Name == employeeName);
+            var competence = await db.Competences.FirstOrDefaultAsync(c => c.Name == competenceName);
+            if (employee is null || competence is null) { errors.Add(new { row = r + 1, message = "EmployeeName or CompetenceName not found." }); continue; }
+            var level = int.TryParse(Get("Level"), out var parsedLevel) ? parsedLevel : 1;
+            var validUntil = DateOnly.TryParse(Get("ValidUntil"), out var parsedDate) ? parsedDate : (DateOnly?)null;
+            var item = await db.EmployeeCompetences.FindAsync(employee.Id, competence.Id);
+            if (item is null) { db.EmployeeCompetences.Add(new EmployeeCompetence { EmployeeId = employee.Id, CompetenceId = competence.Id, Level = level, ValidUntil = validUntil }); created++; }
+            else { item.Level = level; item.ValidUntil = validUntil; updated++; }
+        }
+        await db.SaveChangesAsync(); await context.Response.WriteAsJsonAsync(new { created, updated, errors });
+    }
+
+    private static async Task FileResponse(HttpContext context, string content, string contentType, string fileName)
+    {
+        context.Response.ContentType = contentType;
+        context.Response.Headers.ContentDisposition = $"attachment; filename=\"{fileName}\"";
+        await context.Response.Body.WriteAsync(Encoding.UTF8.GetBytes(content));
+    }
+
+    private static string BuildShiftHtml(IEnumerable<Shift> shifts, CoverageService coverage)
+    {
+        var sb = new StringBuilder("<html><head><meta charset='utf-8'><style>table{border-collapse:collapse}th,td{border:1px solid #999;padding:6px}.green{background:#d9ead3}.yellow{background:#fff2cc}.red{background:#f4cccc}</style></head><body><h1>Vaktklar – vaktplan</h1><table><tr><th>Dato</th><th>Vakt</th><th>Avdeling</th><th>Start</th><th>Slutt</th><th>Minimum</th><th>Bemannet</th><th>Status</th><th>Kommentar</th></tr>");
+        foreach (var shift in shifts)
+        {
+            var result = coverage.AnalyzeShift(shift); var status = result.OverallStatus ?? "UNKNOWN";
+            var css = status == "GREEN" ? "green" : status == "YELLOW" ? "yellow" : "red";
+            var comment = string.Join(" | ", result.Warnings ?? []);
+            sb.Append($"<tr class='{css}'><td>{H(shift.Date.ToString("yyyy-MM-dd"))}</td><td>{H(shift.ShiftType)}</td><td>{H(shift.Department)}</td><td>{H(shift.StartTime?.ToString("HH:mm") ?? "")}</td><td>{H(shift.StartTime?.AddHours((double)shift.Hours).ToString("HH:mm") ?? "")}</td><td>{shift.MinimumStaff}</td><td>{shift.Assignments.Count}</td><td>{H(status)}</td><td>{H(comment)}</td></tr>");
+        }
+        return sb.Append("</table></body></html>").ToString();
+    }
+
+    private static string Csv(string? value) => $"\"{(value ?? "").Replace("\"", "\"\"")}\"";
+    private static string? NullIfEmpty(string value) => string.IsNullOrWhiteSpace(value) ? null : value;
+    private static decimal ParseDecimal(string value, decimal fallback) => decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var n) ? n : decimal.TryParse(value, NumberStyles.Number, CultureInfo.GetCultureInfo("nb-NO"), out n) ? n : fallback;
+    private static string H(string value) => System.Net.WebUtility.HtmlEncode(value);
+
+    private static IEnumerable<List<string>> ParseCsv(string text)
+    {
+        var rows = new List<List<string>>(); var row = new List<string>(); var cell = new StringBuilder(); var quoted = false;
+        for (var i = 0; i < text.Length; i++)
+        {
+            var ch = text[i];
+            if (ch == '"') { if (quoted && i + 1 < text.Length && text[i + 1] == '"') { cell.Append('"'); i++; } else quoted = !quoted; }
+            else if (ch == ',' && !quoted) { row.Add(cell.ToString()); cell.Clear(); }
+            else if ((ch == '\n' || ch == '\r') && !quoted) { if (ch == '\r' && i + 1 < text.Length && text[i + 1] == '\n') i++; row.Add(cell.ToString()); cell.Clear(); if (row.Any(x => !string.IsNullOrWhiteSpace(x))) rows.Add(row); row = []; }
+            else cell.Append(ch);
+        }
+        if (cell.Length > 0 || row.Count > 0) { row.Add(cell.ToString()); rows.Add(row); }
+        return rows;
+    }
 }
 
 public sealed record LoginRequest(string Username, string Password);
