@@ -11,7 +11,10 @@ permissions:
   contents: read
 
 env:
-  DB_PASSWORD: "CiStrongPassword!12345"
+  # CI-only values used only for Docker Compose interpolation/build validation.
+  DB_PASSWORD: "CiOnly-Password-2026!"
+  JWT_SECRET_KEY: "CiOnly-Jwt-Key-2026-At-Least-32-Bytes-Long"
+  VAKTKLAR_BOOTSTRAP_KEY: "ci-bootstrap-key"
 
 jobs:
   backend:
@@ -26,7 +29,7 @@ jobs:
       - name: Build backend
         run: dotnet build backend/Workforce.Api.Tests/Workforce.Api.Tests.csproj -c Release --no-restore
       - name: Test backend
-        run: dotnet test backend/Workforce.Api.Tests/Workforce.Api.Tests.csproj -c Release --no-build
+        run: dotnet test backend/Workforce.Api.Tests/Workforce.Api.Tests.csproj -c Release --no-build --logger "console;verbosity=minimal"
 
   frontend:
     runs-on: ubuntu-latest
@@ -51,5 +54,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Validate Compose configuration
+        run: docker compose config --quiet
       - name: Build Docker Compose stack
         run: docker compose build
