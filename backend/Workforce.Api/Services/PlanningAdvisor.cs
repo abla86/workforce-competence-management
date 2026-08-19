@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Workforce.Api.DTOs;
 using Workforce.Api.Models;
 
@@ -24,9 +23,10 @@ public sealed class PlanningAdvisor
             var score = 100;
 
             if (employee.PositionPercent <= 0)
-            {
                 hardFailures.Add("Ingen aktiv stillingsprosent");
-            }
+
+            if (shift.Assignments.Any(a => a.EmployeeId == employee.Id))
+                hardFailures.Add("Allerede tildelt denne vakten");
 
             var absence = employee.Absences.Any(a => a.Approved && a.From <= shift.Date && a.To >= shift.Date);
             if (absence) hardFailures.Add("Fravær på vaktdato");
@@ -60,7 +60,9 @@ public sealed class PlanningAdvisor
             var assignedHours = allShifts.Where(s => s.Date >= shift.Date.AddDays(-6) && s.Date <= shift.Date)
                 .Where(s => s.Assignments.Any(a => a.EmployeeId == employee.Id))
                 .Sum(s => (double)s.Hours);
-            if (assignedHours >= 35) { warnings.Add("Høy planlagt belastning siste 7 dager"); score -= 20; }
+            if (employee.MaxWeeklyHours > 0 && assignedHours + (double)shift.Hours > (double)employee.MaxWeeklyHours)
+                hardFailures.Add($"Ukegrense overskrides ({assignedHours + (double)shift.Hours:F1}t > {employee.MaxWeeklyHours:F1}t)");
+            else if (assignedHours >= 35) { warnings.Add("Høy planlagt belastning siste 7 dager"); score -= 20; }
             else if (assignedHours >= 30) { warnings.Add("Moderat høy belastning siste 7 dager"); score -= 10; }
 
             score -= hardFailures.Count * 40;
