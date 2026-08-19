@@ -20,29 +20,25 @@ public static class VaktklarAuthentication
         if (string.IsNullOrWhiteSpace(secret) || Encoding.UTF8.GetByteCount(secret) < 32)
             throw new InvalidOperationException("Jwt:SecretKey must contain at least 32 UTF-8 bytes.");
 
-        services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-            .AddJwtBearer(options =>
+        services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
+        {
+            options.TokenValidationParameters = new TokenValidationParameters
             {
-                options.TokenValidationParameters = new TokenValidationParameters
+                ValidateIssuer = true, ValidIssuer = configuration["Jwt:Issuer"] ?? "vaktklar",
+                ValidateAudience = true, ValidAudience = configuration["Jwt:Audience"] ?? "vaktklar-web",
+                ValidateLifetime = true, ValidateIssuerSigningKey = true,
+                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret)),
+                ClockSkew = TimeSpan.FromSeconds(30)
+            };
+            options.Events = new JwtBearerEvents
+            {
+                OnMessageReceived = context =>
                 {
-                    ValidateIssuer = true,
-                    ValidIssuer = configuration["Jwt:Issuer"] ?? "vaktklar",
-                    ValidateAudience = true,
-                    ValidAudience = configuration["Jwt:Audience"] ?? "vaktklar-web",
-                    ValidateLifetime = true,
-                    ValidateIssuerSigningKey = true,
-                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret)),
-                    ClockSkew = TimeSpan.FromSeconds(30)
-                };
-                options.Events = new JwtBearerEvents
-                {
-                    OnMessageReceived = context =>
-                    {
-                        if (context.Request.Cookies.TryGetValue(CookieName, out var token)) context.Token = token;
-                        return Task.CompletedTask;
-                    }
-                };
-            });
+                    if (context.Request.Cookies.TryGetValue(CookieName, out var token)) context.Token = token;
+                    return Task.CompletedTask;
+                }
+            };
+        });
         services.AddAuthorization(options =>
         {
             options.AddPolicy("Manager", p => p.RequireRole("Admin", "Manager"));
@@ -60,92 +56,54 @@ public static class VaktklarAuthentication
             var normalized = request.Username.Trim().ToLowerInvariant();
             var user = await db.UserAccounts.SingleOrDefaultAsync(x => x.Username == normalized && x.IsActive);
             if (user is null) return Results.Unauthorized();
-            if (user.LockedUntilUtc is { } locked && locked > DateTime.UtcNow)
-                return Results.Json(new { message = "Kontoen er midlertidig låst. Prøv igjen senere." }, statusCode: 423);
-
+            if (user.LockedUntilUtc is { } locked && locked > DateTime.UtcNow) return Results.Json(new { message = "Kontoen er midlertidig låst. Prøv igjen senere." }, statusCode: 423);
             if (!BCrypt.Net.BCrypt.Verify(request.Password, user.PasswordHash))
             {
                 user.FailedLoginAttempts++;
-                if (user.FailedLoginAttempts >= 5)
-                {
-                    user.FailedLoginAttempts = 0;
-                    user.LockedUntilUtc = DateTime.UtcNow.AddMinutes(15);
-                }
+                if (user.FailedLoginAttempts >= 5) { user.FailedLoginAttempts = 0; user.LockedUntilUtc = DateTime.UtcNow.AddMinutes(15); }
                 await db.SaveChangesAsync();
                 return Results.Unauthorized();
             }
-
-            user.FailedLoginAttempts = 0;
-            user.LockedUntilUtc = null;
-            user.LastLoginAtUtc = DateTime.UtcNow;
+            user.FailedLoginAttempts = 0; user.LockedUntilUtc = null; user.LastLoginAtUtc = DateTime.UtcNow;
             await db.SaveChangesAsync();
-
             response.Cookies.Append(CookieName, CreateToken(user, config), CookieOptions(config));
             return Results.Ok(new { user = new { user.Id, user.Username, user.Role } });
-        });
+        }).RequireRateLimiting("auth");
 
-        group.MapPost("/logout", (HttpResponse response) =>
-        {
-            response.Cookies.Delete(CookieName, CookieOptions(null));
-            return Results.NoContent();
-        });
-
+        group.MapPost("/logout", (HttpResponse response) => { response.Cookies.Delete(CookieName, CookieOptions(null)); return Results.NoContent(); });
         group.MapGet("/me", (ClaimsPrincipal principal) =>
         {
             if (principal.Identity?.IsAuthenticated != true) return Results.Unauthorized();
-            return Results.Ok(new
-            {
-                id = principal.FindFirstValue(ClaimTypes.NameIdentifier),
-                username = principal.FindFirstValue(ClaimTypes.Name),
-                role = principal.FindFirstValue(ClaimTypes.Role)
-            });
+            return Results.Ok(new { id = principal.FindFirstValue(ClaimTypes.NameIdentifier), username = principal.FindFirstValue(ClaimTypes.Name), role = principal.FindFirstValue(ClaimTypes.Role) });
         }).RequireAuthorization();
 
         group.MapPost("/bootstrap", async (BootstrapRequest request, AppDbContext db, IConfiguration config) =>
         {
             var bootstrapKey = config["VAKTKLAR_BOOTSTRAP_KEY"];
             if (string.IsNullOrWhiteSpace(bootstrapKey)) return Results.StatusCode(503);
-            var expected = Encoding.UTF8.GetBytes(bootstrapKey);
-            var supplied = Encoding.UTF8.GetBytes(request.BootstrapKey);
+            var expected = Encoding.UTF8.GetBytes(bootstrapKey); var supplied = Encoding.UTF8.GetBytes(request.BootstrapKey);
             if (expected.Length != supplied.Length || !CryptographicOperations.FixedTimeEquals(expected, supplied)) return Results.Unauthorized();
             if (await db.UserAccounts.AnyAsync()) return Results.Conflict(new { message = "Initial setup is already completed." });
             if (request.Username.Length < 3 || request.Password.Length < 12) return Results.BadRequest(new { message = "Username must contain at least 3 characters and password at least 12 characters." });
-
-            var user = new UserAccount
-            {
-                Username = request.Username.Trim().ToLowerInvariant(),
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password, 12),
-                Role = "Admin"
-            };
-            db.UserAccounts.Add(user);
-            await db.SaveChangesAsync();
+            var user = new UserAccount { Username = request.Username.Trim().ToLowerInvariant(), PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password, 12), Role = "Admin" };
+            db.UserAccounts.Add(user); await db.SaveChangesAsync();
             return Results.Created("/api/auth/me", new { user.Id, user.Username, user.Role });
-        });
-
+        }).RequireRateLimiting("auth");
         return group;
     }
 
     private static string CreateToken(UserAccount user, IConfiguration config)
     {
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(config["Jwt:SecretKey"]!));
-        var token = new JwtSecurityToken(
-            issuer: config["Jwt:Issuer"] ?? "vaktklar",
-            audience: config["Jwt:Audience"] ?? "vaktklar-web",
-            claims: [
-                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-                new Claim(ClaimTypes.Name, user.Username),
-                new Claim(ClaimTypes.Role, user.Role)],
-            expires: DateTime.UtcNow.AddMinutes(60),
-            signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256));
+        var token = new JwtSecurityToken(issuer: config["Jwt:Issuer"] ?? "vaktklar", audience: config["Jwt:Audience"] ?? "vaktklar-web",
+            claims: [new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()), new Claim(ClaimTypes.Name, user.Username), new Claim(ClaimTypes.Role, user.Role)],
+            expires: DateTime.UtcNow.AddMinutes(60), signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256));
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
     private static CookieOptions CookieOptions(IConfiguration? config) => new()
     {
-        HttpOnly = true,
-        Secure = config?["Security:CookieSecure"] == "true" || config is null,
-        SameSite = SameSiteMode.Lax,
-        Path = "/",
+        HttpOnly = true, Secure = config?["Security:CookieSecure"] == "true" || config is null, SameSite = SameSiteMode.Lax, Path = "/",
         MaxAge = config is null ? TimeSpan.Zero : TimeSpan.FromMinutes(60)
     };
 }
