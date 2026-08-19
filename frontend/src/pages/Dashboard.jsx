@@ -1,11 +1,24 @@
 import MetricCard from "../components/MetricCard.jsx";
 import StatusBadge from "../components/StatusBadge.jsx";
 
-export default function Dashboard({ data }) {
+export default function Dashboard({ data, employees = [] }) {
   const coverage = data?.competenceCoverage ?? 0;
   const actions = data?.actionRequiredShifts ?? 0;
   const shifts = data?.upcomingShifts ?? [];
   const goodShifts = shifts.filter((s) => s.overallCovered).length;
+
+  const competenceAlerts = employees.flatMap((employee) =>
+    (employee.competences ?? [])
+      .filter((competence) => competence.status === "EXPIRED" || competence.status === "REVIEW_DUE")
+      .map((competence) => ({
+        employeeId: employee.id,
+        employeeName: employee.name,
+        ...competence,
+      }))
+  );
+
+  const expiredAlerts = competenceAlerts.filter((item) => item.status === "EXPIRED");
+  const reviewAlerts = competenceAlerts.filter((item) => item.status === "REVIEW_DUE");
 
   return (
     <>
@@ -16,6 +29,46 @@ export default function Dashboard({ data }) {
           <p>Live staffing and competence status across planned shifts.</p>
         </div>
       </div>
+
+      {competenceAlerts.length > 0 && (
+        <section className="panel" style={{ border: "1px solid #f59e0b", background: "#fffbeb" }} aria-label="Competence alerts">
+          <div className="panel-heading">
+            <div>
+              <h2>Competence alerts</h2>
+              <p>
+                {expiredAlerts.length > 0 && `${expiredAlerts.length} expired`}
+                {expiredAlerts.length > 0 && reviewAlerts.length > 0 && " · "}
+                {reviewAlerts.length > 0 && `${reviewAlerts.length} due within 45 days`}
+              </p>
+            </div>
+          </div>
+          <div style={{ display: "grid", gap: "0.65rem" }}>
+            {competenceAlerts.map((alert) => (
+              <div
+                key={`${alert.employeeId}-${alert.competenceId}`}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: "1rem",
+                  alignItems: "center",
+                  padding: "0.75rem 1rem",
+                  borderRadius: "0.6rem",
+                  background: "white",
+                  border: "1px solid #fde68a",
+                }}
+              >
+                <div>
+                  <strong>{alert.employeeName}</strong>
+                  <div>{alert.name}</div>
+                </div>
+                <span style={{ fontWeight: 700 }}>
+                  {alert.status === "EXPIRED" ? "EXPIRED" : "REVIEW DUE"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="metrics">
         <MetricCard label="Employees" value={data?.totalEmployees ?? "—"} status="GOOD" detail="Active workforce" />
