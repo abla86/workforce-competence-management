@@ -1,6 +1,6 @@
-namespace Vaktklar.Domain.Models.Coverage;
+namespace Workforce.Api.Models;
 
-public class ShiftTaskCoverage
+public sealed class ShiftTaskCoverage
 {
     public int Id { get; set; }
 
@@ -10,6 +10,7 @@ public class ShiftTaskCoverage
     public int EmployeeId { get; set; }
     public Employee Employee { get; set; } = null!;
 
+    // Snapshot of the requirement when the employee was assigned to the task.
     public int RequiredCount { get; set; }
     public int MinCompetenceLevel { get; set; }
     public bool IsCritical { get; set; }
