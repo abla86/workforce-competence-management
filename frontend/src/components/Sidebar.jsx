@@ -1,38 +1,23 @@
 const items = [
+  ["vaktklar", "Vaktklar"],
   ["dashboard", "Dashboard"],
-  ["employees", "Employees"],
-  ["competence", "Competence"],
-  ["shifts", "Shifts"],
-  ["gaps", "Gap Analysis"],
+  ["employees", "Ansatte"],
+  ["competence", "Kompetanse"],
+  ["shifts", "Vakter"],
+  ["gaps", "Kompetansegap"],
 ];
 
 export default function Sidebar({ page, setPage }) {
   return (
     <aside className="sidebar">
       <div className="brand">
-        <div className="brand-mark">WC</div>
-        <div>
-          <strong>Workforce</strong>
-          <span>Competence Management</span>
-        </div>
+        <div className="brand-mark">VK</div>
+        <div><strong>Vaktklar</strong><span>Bemanning og kompetanse</span></div>
       </div>
-
-      <nav>
-        {items.map(([id, label]) => (
-          <button
-            key={id}
-            className={page === id ? "active" : ""}
-            onClick={() => setPage(id)}
-          >
-            {label}
-          </button>
-        ))}
+      <nav aria-label="Hovedmeny">
+        {items.map(([id, label]) => <button key={id} className={page === id ? "active" : ""} onClick={() => setPage(id)}>{label}</button>)}
       </nav>
-
-      <div className="sidebar-note">
-        <strong>System status</strong>
-        <span className="dotline"><i /> API & database connected</span>
-      </div>
+      <div className="sidebar-note"><strong>Systemstatus</strong><span className="dotline"><i /> API & database tilkoblet</span></div>
     </aside>
   );
 }
