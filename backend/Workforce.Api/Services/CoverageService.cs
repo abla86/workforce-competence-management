@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+using Workforce.Api.Data;
 using Workforce.Api.Models;
 
 namespace Workforce.Api.Services;
