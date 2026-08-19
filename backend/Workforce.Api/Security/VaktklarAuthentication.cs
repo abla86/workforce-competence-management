@@ -1,5 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -19,7 +20,6 @@ public static class VaktklarAuthentication
         if (string.IsNullOrWhiteSpace(secret) || Encoding.UTF8.GetByteCount(secret) < 32)
             throw new InvalidOperationException("Jwt:SecretKey must contain at least 32 UTF-8 bytes.");
 
-        services.AddHttpContextAccessor();
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(options =>
             {
@@ -38,8 +38,7 @@ public static class VaktklarAuthentication
                 {
                     OnMessageReceived = context =>
                     {
-                        if (context.Request.Cookies.TryGetValue(CookieName, out var token))
-                            context.Token = token;
+                        if (context.Request.Cookies.TryGetValue(CookieName, out var token)) context.Token = token;
                         return Task.CompletedTask;
                     }
                 };
@@ -61,7 +60,6 @@ public static class VaktklarAuthentication
             var normalized = request.Username.Trim().ToLowerInvariant();
             var user = await db.UserAccounts.SingleOrDefaultAsync(x => x.Username == normalized && x.IsActive);
             if (user is null) return Results.Unauthorized();
-
             if (user.LockedUntilUtc is { } locked && locked > DateTime.UtcNow)
                 return Results.Json(new { message = "Kontoen er midlertidig låst. Prøv igjen senere." }, statusCode: 423);
 
@@ -82,14 +80,13 @@ public static class VaktklarAuthentication
             user.LastLoginAtUtc = DateTime.UtcNow;
             await db.SaveChangesAsync();
 
-            var token = CreateToken(user, config);
-            response.Cookies.Append(CookieName, token, CookieOptions(config, 60));
+            response.Cookies.Append(CookieName, CreateToken(user, config), CookieOptions(config));
             return Results.Ok(new { user = new { user.Id, user.Username, user.Role } });
         });
 
         group.MapPost("/logout", (HttpResponse response) =>
         {
-            response.Cookies.Delete(CookieName, CookieOptions(config: null, maxAgeMinutes: 0));
+            response.Cookies.Delete(CookieName, CookieOptions(null));
             return Results.NoContent();
         });
 
@@ -107,12 +104,12 @@ public static class VaktklarAuthentication
         group.MapPost("/bootstrap", async (BootstrapRequest request, AppDbContext db, IConfiguration config) =>
         {
             var bootstrapKey = config["VAKTKLAR_BOOTSTRAP_KEY"];
-            if (string.IsNullOrWhiteSpace(bootstrapKey) || !CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(bootstrapKey), Encoding.UTF8.GetBytes(request.BootstrapKey)))
-                return Results.Unauthorized();
-            if (await db.UserAccounts.AnyAsync())
-                return Results.Conflict(new { message = "Initial setup is already completed." });
-            if (request.Password.Length < 12)
-                return Results.BadRequest(new { message = "Administrator password must contain at least 12 characters." });
+            if (string.IsNullOrWhiteSpace(bootstrapKey)) return Results.StatusCode(503);
+            var expected = Encoding.UTF8.GetBytes(bootstrapKey);
+            var supplied = Encoding.UTF8.GetBytes(request.BootstrapKey);
+            if (expected.Length != supplied.Length || !CryptographicOperations.FixedTimeEquals(expected, supplied)) return Results.Unauthorized();
+            if (await db.UserAccounts.AnyAsync()) return Results.Conflict(new { message = "Initial setup is already completed." });
+            if (request.Username.Length < 3 || request.Password.Length < 12) return Results.BadRequest(new { message = "Username must contain at least 3 characters and password at least 12 characters." });
 
             var user = new UserAccount
             {
@@ -131,29 +128,25 @@ public static class VaktklarAuthentication
     private static string CreateToken(UserAccount user, IConfiguration config)
     {
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(config["Jwt:SecretKey"]!));
-        var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-        var claims = new[]
-        {
-            new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-            new Claim(ClaimTypes.Name, user.Username),
-            new Claim(ClaimTypes.Role, user.Role)
-        };
         var token = new JwtSecurityToken(
             issuer: config["Jwt:Issuer"] ?? "vaktklar",
             audience: config["Jwt:Audience"] ?? "vaktklar-web",
-            claims: claims,
+            claims: [
+                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+                new Claim(ClaimTypes.Name, user.Username),
+                new Claim(ClaimTypes.Role, user.Role)],
             expires: DateTime.UtcNow.AddMinutes(60),
-            signingCredentials: credentials);
+            signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256));
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
-    private static CookieOptions CookieOptions(IConfiguration? config, int maxAgeMinutes) => new()
+    private static CookieOptions CookieOptions(IConfiguration? config) => new()
     {
         HttpOnly = true,
-        Secure = config?["Security:CookieSecure"] is "true" || config is null,
+        Secure = config?["Security:CookieSecure"] == "true" || config is null,
         SameSite = SameSiteMode.Lax,
         Path = "/",
-        MaxAge = maxAgeMinutes <= 0 ? TimeSpan.Zero : TimeSpan.FromMinutes(maxAgeMinutes)
+        MaxAge = config is null ? TimeSpan.Zero : TimeSpan.FromMinutes(60)
     };
 }
 
