@@ -8,6 +8,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<Employee> Employees => Set<Employee>();
     public DbSet<Competence> Competences => Set<Competence>();
     public DbSet<EmployeeCompetence> EmployeeCompetences => Set<EmployeeCompetence>();
+    public DbSet<EmployeeAvailability> EmployeeAvailability => Set<EmployeeAvailability>();
     public DbSet<Shift> Shifts => Set<Shift>();
     public DbSet<ShiftAssignment> ShiftAssignments => Set<ShiftAssignment>();
     public DbSet<ShiftRequirement> ShiftRequirements => Set<ShiftRequirement>();
@@ -20,6 +21,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         modelBuilder.Entity<EmployeeCompetence>().HasKey(x => new { x.EmployeeId, x.CompetenceId });
         modelBuilder.Entity<ShiftAssignment>().HasKey(x => new { x.ShiftId, x.EmployeeId });
         modelBuilder.Entity<ShiftRequirement>().HasKey(x => new { x.ShiftId, x.CompetenceId });
+        modelBuilder.Entity<EmployeeAvailability>().HasKey(x => new { x.EmployeeId, x.Date });
 
         modelBuilder.Entity<Competence>().HasIndex(x => x.Name).IsUnique();
     }
