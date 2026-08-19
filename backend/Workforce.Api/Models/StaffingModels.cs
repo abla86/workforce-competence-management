@@ -1,10 +1,12 @@
 namespace Workforce.Api.Models;
 
-public sealed record AutoStaffingRequest(
-    int ShiftId,
-    int? WorkTaskId = null,
-    int? CompetenceId = null,
-    int MinimumCompetenceLevel = 1);
+public sealed class AutoStaffingRequest
+{
+    public int ShiftId { get; set; }
+    public int? WorkTaskId { get; set; }
+    public int? CompetenceId { get; set; }
+    public int MinimumCompetenceLevel { get; set; } = 1;
+}
 
 public sealed class StaffingProposal
 {
@@ -26,15 +28,7 @@ public sealed class MatchingFactor
     public bool IsMandatory { get; set; }
 }
 
-public enum FactorType
-{
-    CompetenceMatch,
-    CompetenceLevel,
-    AvailableTimeSlot,
-    RestPeriodCompliant,
-    UnderWeeklyLimit,
-    PreferenceMatch
-}
+public enum FactorType { CompetenceMatch, CompetenceLevel, AvailableTimeSlot, RestPeriodCompliant, UnderWeeklyLimit, PreferenceMatch }
 
 public sealed class StaffingWarning
 {
@@ -42,14 +36,7 @@ public sealed class StaffingWarning
     public string Message { get; set; } = "";
 }
 
-public enum StaffingWarningType
-{
-    MissingCompetence,
-    HasAbsence,
-    DoubleBooked,
-    RestPeriodViolation,
-    OvertimeRisk
-}
+public enum StaffingWarningType { MissingCompetence, HasAbsence, DoubleBooked, RestPeriodViolation, OvertimeRisk }
 
 public sealed class SuggestedReplacement
 {
@@ -78,12 +65,7 @@ public sealed class RuleViolation
     public string Message { get; set; } = "";
 }
 
-public enum RuleSeverity
-{
-    Info,
-    Warning,
-    Critical
-}
+public enum RuleSeverity { Info, Warning, Critical }
 
 public sealed class DispensationNeed
 {
