@@ -3,6 +3,7 @@ namespace Workforce.Api.Models;
 public sealed class EmployeeStatus
 {
     public int EmployeeId { get; set; }
+    public string EmployeeName { get; set; } = "";
     public Employee Employee { get; set; } = null!;
     public EmployeeAvailabilityStatus Status { get; set; } = EmployeeAvailabilityStatus.Unknown;
     public string? StatusText { get; set; }
@@ -39,12 +40,7 @@ public sealed class DailyPlan
     public List<DailyPlanAssignment> Assignments { get; set; } = [];
 }
 
-public enum DailyPlanStatus
-{
-    Draft,
-    Published,
-    Archived
-}
+public enum DailyPlanStatus { Draft, Published, Archived }
 
 public sealed class DailyTaskItem
 {
@@ -87,12 +83,7 @@ public sealed class ShiftPlan
     public List<Shift> Shifts { get; set; } = [];
 }
 
-public enum ShiftPlanVisibility
-{
-    ManagersOnly,
-    Department,
-    AllEmployees
-}
+public enum ShiftPlanVisibility { ManagersOnly, Department, AllEmployees }
 
 public sealed class Notification
 {
@@ -108,10 +99,4 @@ public sealed class Notification
     public bool IsRead { get; set; }
 }
 
-public enum NotificationType
-{
-    StatusChange,
-    DailyPlanPublished,
-    ShiftPlanPublished,
-    General
-}
+public enum NotificationType { StatusChange, DailyPlanPublished, ShiftPlanPublished, General }
