@@ -13,6 +13,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<ShiftAssignment> ShiftAssignments => Set<ShiftAssignment>();
     public DbSet<ShiftRequirement> ShiftRequirements => Set<ShiftRequirement>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
+    public DbSet<UserAccount> UserAccounts => Set<UserAccount>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -25,5 +26,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         modelBuilder.Entity<Competence>().HasIndex(x => x.Name).IsUnique();
         modelBuilder.Entity<Absence>().HasIndex(x => new { x.EmployeeId, x.From, x.To });
         modelBuilder.Entity<AuditEvent>().HasIndex(x => x.OccurredAtUtc);
+        modelBuilder.Entity<UserAccount>().HasIndex(x => x.Username).IsUnique();
+        modelBuilder.Entity<UserAccount>().Property(x => x.Username).HasMaxLength(100);
+        modelBuilder.Entity<UserAccount>().Property(x => x.Role).HasMaxLength(40);
     }
 }
