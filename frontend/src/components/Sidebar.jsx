@@ -1,5 +1,6 @@
 const items = [
   ["vaktklar", "Vaktklar"],
+  ["plan", "Dagsplan / skiftplan"],
   ["dashboard", "Dashboard"],
   ["employees", "Ansatte"],
   ["competence", "Kompetanse"],
