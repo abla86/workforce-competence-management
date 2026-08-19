@@ -5,6 +5,7 @@ public sealed class Employee
     public int Id { get; set; }
     public string Name { get; set; } = "";
     public string Role { get; set; } = "";
+    public int DepartmentId { get; set; }
     public string? Authorization { get; set; }
     public DateTime? AuthorizationExpiry { get; set; }
     public decimal PositionPercent { get; set; }
@@ -22,4 +23,5 @@ public sealed class Employee
     public List<EmployeeAvailability> Availability { get; set; } = [];
     public List<Absence> Absences { get; set; } = [];
     public List<EmployeeTimeRecord> TimeRecords { get; set; } = [];
+    public EmployeeStatus? Status { get; set; }
 }
