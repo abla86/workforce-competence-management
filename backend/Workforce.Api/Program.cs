@@ -1,26 +1,41 @@
+using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Workforce.Api.Data;
-using Workforce.Api.DTOs;
 using Workforce.Api.Models;
 using Workforce.Api.Services;
-using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
+builder.Services.AddDataProtection();
+builder.Services.AddScoped<CoverageService>();
+builder.Services.AddScoped<AuditProtectionService>();
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
-builder.Services.AddScoped<CoverageService>();
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddFixedWindowLimiter("coverage", limiterOptions =>
+    {
+        limiterOptions.PermitLimit = 60;
+        limiterOptions.Window = TimeSpan.FromMinutes(1);
+        limiterOptions.QueueLimit = 0;
+    });
+});
 
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 builder.Services.AddCors(options => options.AddDefaultPolicy(policy =>
 {
-    if (allowedOrigins.Length > 0) policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod();
+    if (allowedOrigins.Length > 0)
+        policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod();
 }));
 
 var app = builder.Build();
 if (!app.Environment.IsDevelopment()) app.UseHttpsRedirection();
 app.UseCors();
+app.UseRateLimiter();
 app.MapOpenApi();
 app.MapWorkforceExpansionEndpoints();
 
@@ -33,59 +48,95 @@ using (var scope = app.Services.CreateScope())
 app.MapGet("/", () => Results.Ok(new { name = "Workforce & Competence Management API", version = "2.0.0", status = "running" }));
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
 
-// Existing employee/competence/shift endpoints remain in the expansion endpoint module.
-
-app.MapGet("/api/shifts/{shiftId:int}/coverage", async (int shiftId, AppDbContext db, CoverageService coverage, ILogger<CoverageService> logger) =>
+app.MapGet("/api/shifts/{shiftId:int}/coverage", async (
+    int shiftId,
+    CoverageService coverage,
+    AuditProtectionService protection,
+    HttpContext http,
+    ILogger<CoverageService> logger) =>
 {
     try
     {
-        var shift = await db.Shifts
-            .Include(s => s.Assignments).ThenInclude(a => a.Employee).ThenInclude(e => e.Competences).ThenInclude(c => c.Competence)
-            .Include(s => s.Requirements).ThenInclude(r => r.Competence)
-            .FirstOrDefaultAsync(s => s.Id == shiftId);
-        if (shift is null) return Results.NotFound(new { message = $"Shift {shiftId} not found." });
-        var result = coverage.AnalyzeShift(shift);
-        var audit = new CoverageAuditEntry
-        {
-            ShiftId = shiftId,
-            Status = result.IsReady ? "Green" : "Red",
-            DetailsJson = JsonSerializer.Serialize(result),
-            TriggeredBy = "system"
-        };
-        db.CoverageAuditEntries.Add(audit);
-        await db.SaveChangesAsync();
-        logger.LogInformation("Coverage evaluated for shift {ShiftId}: {Status}", shiftId, audit.Status);
+        var result = await coverage.EvaluateAsync(shiftId, "system");
+        // CoverageService owns persistence. This endpoint intentionally does not write a second audit row.
+        logger.LogInformation("Coverage evaluated for shift {ShiftId}: {Status}", shiftId, result.Status);
         return Results.Ok(result);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.NotFound(new { message = ex.Message });
     }
     catch (Exception ex)
     {
         logger.LogError(ex, "Error evaluating coverage for shift {ShiftId}", shiftId);
         return Results.Problem("Internal server error");
     }
-}).WithTags("coverage");
+})
+.RequireRateLimiting("coverage")
+.WithTags("coverage");
 
-app.MapPost("/api/shifts/{shiftId:int}/coverage/scenario", async (int shiftId, RemoveEmployeeRequest request, AppDbContext db, CoverageService coverage) =>
+app.MapPost("/api/shifts/{shiftId:int}/coverage/scenario", async (
+    int shiftId,
+    RemoveEmployeeRequest request,
+    AppDbContext db,
+    CoverageService coverage) =>
 {
     var shift = await db.Shifts
-        .Include(s => s.Assignments).ThenInclude(a => a.Employee).ThenInclude(e => e.Competences).ThenInclude(c => c.Competence)
-        .Include(s => s.Requirements).ThenInclude(r => r.Competence)
+        .Include(s => s.ShiftTasks).ThenInclude(st => st.WorkTask)
+        .Include(s => s.ShiftTasks).ThenInclude(st => st.ShiftTaskCoverages).ThenInclude(c => c.Employee).ThenInclude(e => e.Competences)
+        .Include(s => s.Assignments).ThenInclude(a => a.Employee)
         .FirstOrDefaultAsync(s => s.Id == shiftId);
-    if (shift is null) return Results.NotFound(new { message = $"Shift {shiftId} not found." });
+
+    if (shift is null)
+        return Results.NotFound(new { message = $"Shift {shiftId} not found" });
+
     var removed = request.EmployeeIds.ToHashSet();
-    var original = shift.Assignments.ToList();
-    shift.Assignments = original.Where(a => !removed.Contains(a.EmployeeId)).ToList();
-    var result = coverage.AnalyzeShift(shift);
-    shift.Assignments = original;
-    var replacements = await db.Employees.Where(e => e.IsActive && !removed.Contains(e.Id)).ToListAsync();
-    var suggested = replacements.Select(e => new { e.Id, e.Name, e.Role }).ToList();
-    return Results.Ok(new { coverageWithoutEmployee = result, suggestedReplacements = suggested });
-}).WithTags("coverage");
+    var originalAssignments = shift.Assignments.ToList();
+    var originalCoverages = shift.ShiftTasks.ToDictionary(
+        t => t.Id,
+        t => t.ShiftTaskCoverages.ToList());
+
+    shift.Assignments = originalAssignments.Where(a => !removed.Contains(a.EmployeeId)).ToList();
+    foreach (var task in shift.ShiftTasks)
+        task.ShiftTaskCoverages = originalCoverages[task.Id].Where(c => !removed.Contains(c.EmployeeId)).ToList();
+
+    var result = coverage.Evaluate(shift);
+
+    shift.Assignments = originalAssignments;
+    foreach (var task in shift.ShiftTasks)
+        task.ShiftTaskCoverages = originalCoverages[task.Id];
+
+    var candidates = await db.Employees
+        .Where(e => e.IsActive && !removed.Contains(e.Id))
+        .Select(e => new { e.Id, e.Name, e.Role })
+        .ToListAsync();
+
+    return Results.Ok(new { coverageWithoutEmployees = result, suggestedReplacements = candidates });
+})
+.RequireRateLimiting("coverage")
+.WithTags("coverage");
 
 app.MapGet("/api/shifts/{shiftId:int}/coverage/history", async (int shiftId, AppDbContext db) =>
 {
-    var audits = await db.CoverageAuditEntries.Where(a => a.ShiftId == shiftId).OrderByDescending(a => a.EvaluatedAt).Take(10).ToListAsync();
+    var audits = await db.CoverageAuditEntries
+        .Where(a => a.ShiftId == shiftId)
+        .OrderByDescending(a => a.EvaluatedAt)
+        .Take(20)
+        .Select(a => new
+        {
+            a.Id,
+            a.ShiftId,
+            a.EvaluatedAt,
+            a.Status,
+            a.AnonymizedSummary,
+            a.TriggeredBy,
+            a.ClientIp
+        })
+        .ToListAsync();
     return Results.Ok(audits);
-}).WithTags("coverage");
+})
+.RequireRateLimiting("coverage")
+.WithTags("coverage");
 
 app.Run();
 
