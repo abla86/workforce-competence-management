@@ -24,11 +24,9 @@ export const api = {
   competences: () => request("/api/competences"),
   shifts: () => request("/api/shifts"),
   coverage: (shiftId) => request(`/api/shifts/${shiftId}/coverage`),
-  coverageScenario: (shiftId, employeeIds) => request(`/api/shifts/${shiftId}/coverage/scenario`, {
-    method: "POST",
-    body: JSON.stringify({ employeeIds }),
-  }),
+  coverageScenario: (shiftId, employeeIds) => request(`/api/shifts/${shiftId}/coverage/scenario`, { method: "POST", body: JSON.stringify({ employeeIds }) }),
   coverageHistory: (shiftId, limit = 20) => request(`/api/shifts/${shiftId}/coverage/history?limit=${limit}`),
+  coverageTrends: (days = 30) => request(`/api/coverage/trends?days=${days}`),
   candidates: (shiftId) => request(`/api/shifts/${shiftId}/candidates`),
   createEmployee: (body) => request("/api/employees", { method: "POST", body: JSON.stringify(body) }),
   updateEmployee: (id, body) => request(`/api/employees/${id}`, { method: "PUT", body: JSON.stringify(body) }),
