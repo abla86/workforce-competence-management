@@ -9,12 +9,16 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<Competence> Competences => Set<Competence>();
     public DbSet<EmployeeCompetence> EmployeeCompetences => Set<EmployeeCompetence>();
     public DbSet<EmployeeAvailability> EmployeeAvailability => Set<EmployeeAvailability>();
+    public DbSet<Absence> Absences => Set<Absence>();
+    public DbSet<EmployeeTimeRecord> EmployeeTimeRecords => Set<EmployeeTimeRecord>();
     public DbSet<Shift> Shifts => Set<Shift>();
     public DbSet<ShiftAssignment> ShiftAssignments => Set<ShiftAssignment>();
     public DbSet<ShiftRequirement> ShiftRequirements => Set<ShiftRequirement>();
     public DbSet<WorkTask> WorkTasks => Set<WorkTask>();
     public DbSet<ShiftTask> ShiftTasks => Set<ShiftTask>();
     public DbSet<ShiftTaskCoverage> ShiftTaskCoverages => Set<ShiftTaskCoverage>();
+    public DbSet<ShiftRule> ShiftRules => Set<ShiftRule>();
+    public DbSet<ShiftDispensation> ShiftDispensations => Set<ShiftDispensation>();
     public DbSet<CoverageAuditEntry> CoverageAuditEntries => Set<CoverageAuditEntry>();
     public DbSet<PrivacyRequest> PrivacyRequests => Set<PrivacyRequest>();
 
@@ -24,6 +28,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         modelBuilder.Entity<Employee>().Property(x => x.PositionPercent).HasPrecision(5, 2);
         modelBuilder.Entity<Employee>().HasIndex(x => x.IdentitySubject).IsUnique().HasFilter("[IdentitySubject] IS NOT NULL");
         modelBuilder.Entity<Shift>().Property(x => x.Hours).HasPrecision(4, 2);
+
         modelBuilder.Entity<EmployeeCompetence>().HasKey(x => new { x.EmployeeId, x.CompetenceId });
         modelBuilder.Entity<ShiftAssignment>().HasKey(x => new { x.ShiftId, x.EmployeeId });
         modelBuilder.Entity<ShiftRequirement>().HasKey(x => new { x.ShiftId, x.CompetenceId });
@@ -35,6 +40,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         modelBuilder.Entity<ShiftTask>().HasOne(x => x.WorkTask).WithMany(x => x.ShiftTasks).HasForeignKey(x => x.WorkTaskId).OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<ShiftTaskCoverage>().HasOne(x => x.ShiftTask).WithMany(x => x.ShiftTaskCoverages).HasForeignKey(x => x.ShiftTaskId).OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<ShiftTaskCoverage>().HasOne(x => x.Employee).WithMany().HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<Absence>().HasOne(x => x.Employee).WithMany(x => x.Absences).HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<EmployeeTimeRecord>().HasIndex(x => new { x.EmployeeId, x.Year, x.Month }).IsUnique();
+        modelBuilder.Entity<EmployeeTimeRecord>().HasOne(x => x.Employee).WithMany(x => x.TimeRecords).HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<ShiftDispensation>().HasOne(x => x.Employee).WithMany().HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<ShiftDispensation>().HasOne(x => x.Shift).WithMany().HasForeignKey(x => x.ShiftId).OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<CoverageAuditEntry>().HasOne(x => x.Shift).WithMany(x => x.CoverageAudits).HasForeignKey(x => x.ShiftId).OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<CoverageAuditEntry>().HasIndex(x => new { x.ShiftId, x.EvaluatedAt });
