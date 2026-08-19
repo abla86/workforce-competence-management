@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -27,8 +28,7 @@ public static class VaktklarAuthentication
                 ValidateIssuer = true, ValidIssuer = configuration["Jwt:Issuer"] ?? "vaktklar",
                 ValidateAudience = true, ValidAudience = configuration["Jwt:Audience"] ?? "vaktklar-web",
                 ValidateLifetime = true, ValidateIssuerSigningKey = true,
-                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret)),
-                ClockSkew = TimeSpan.FromSeconds(30)
+                IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret)), ClockSkew = TimeSpan.FromSeconds(30)
             };
             options.Events = new JwtBearerEvents
             {
@@ -45,12 +45,12 @@ public static class VaktklarAuthentication
             options.AddPolicy("HR", p => p.RequireRole("Admin", "HR"));
             options.AddPolicy("Admin", p => p.RequireRole("Admin"));
         });
+        services.AddTransient<IStartupFilter, RoleGuardStartupFilter>();
     }
 
     public static RouteGroupBuilder MapAuthEndpoints(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.MapGroup("/api/auth").WithTags("Authentication");
-
         group.MapPost("/login", async (LoginRequest request, AppDbContext db, IConfiguration config, HttpResponse response) =>
         {
             var normalized = request.Username.Trim().ToLowerInvariant();
@@ -61,12 +61,10 @@ public static class VaktklarAuthentication
             {
                 user.FailedLoginAttempts++;
                 if (user.FailedLoginAttempts >= 5) { user.FailedLoginAttempts = 0; user.LockedUntilUtc = DateTime.UtcNow.AddMinutes(15); }
-                await db.SaveChangesAsync();
-                return Results.Unauthorized();
+                await db.SaveChangesAsync(); return Results.Unauthorized();
             }
             user.FailedLoginAttempts = 0; user.LockedUntilUtc = null; user.LastLoginAtUtc = DateTime.UtcNow;
-            await db.SaveChangesAsync();
-            response.Cookies.Append(CookieName, CreateToken(user, config), CookieOptions(config));
+            await db.SaveChangesAsync(); response.Cookies.Append(CookieName, CreateToken(user, config), CookieOptions(config));
             return Results.Ok(new { user = new { user.Id, user.Username, user.Role } });
         }).RequireRateLimiting("auth");
 
@@ -76,7 +74,6 @@ public static class VaktklarAuthentication
             if (principal.Identity?.IsAuthenticated != true) return Results.Unauthorized();
             return Results.Ok(new { id = principal.FindFirstValue(ClaimTypes.NameIdentifier), username = principal.FindFirstValue(ClaimTypes.Name), role = principal.FindFirstValue(ClaimTypes.Role) });
         }).RequireAuthorization();
-
         group.MapPost("/bootstrap", async (BootstrapRequest request, AppDbContext db, IConfiguration config) =>
         {
             var bootstrapKey = config["VAKTKLAR_BOOTSTRAP_KEY"];
@@ -86,8 +83,7 @@ public static class VaktklarAuthentication
             if (await db.UserAccounts.AnyAsync()) return Results.Conflict(new { message = "Initial setup is already completed." });
             if (request.Username.Length < 3 || request.Password.Length < 12) return Results.BadRequest(new { message = "Username must contain at least 3 characters and password at least 12 characters." });
             var user = new UserAccount { Username = request.Username.Trim().ToLowerInvariant(), PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password, 12), Role = "Admin" };
-            db.UserAccounts.Add(user); await db.SaveChangesAsync();
-            return Results.Created("/api/auth/me", new { user.Id, user.Username, user.Role });
+            db.UserAccounts.Add(user); await db.SaveChangesAsync(); return Results.Created("/api/auth/me", new { user.Id, user.Username, user.Role });
         }).RequireRateLimiting("auth");
         return group;
     }
@@ -105,6 +101,29 @@ public static class VaktklarAuthentication
     {
         HttpOnly = true, Secure = config?["Security:CookieSecure"] == "true" || config is null, SameSite = SameSiteMode.Lax, Path = "/",
         MaxAge = config is null ? TimeSpan.Zero : TimeSpan.FromMinutes(60)
+    };
+}
+
+internal sealed class RoleGuardStartupFilter : IStartupFilter
+{
+    public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
+    {
+        app.Use(async (context, nextRequest) =>
+        {
+            if (context.Request.Path.StartsWithSegments("/api") && !context.Request.Path.StartsWithSegments("/api/auth") && context.Request.Method is "POST" or "PUT" or "DELETE" or "PATCH")
+            {
+                var auth = await context.AuthenticateAsync(JwtBearerDefaults.AuthenticationScheme);
+                var role = auth.Principal?.FindFirstValue(ClaimTypes.Role);
+                if (role is not ("Admin" or "Manager" or "HR"))
+                {
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    await context.Response.WriteAsJsonAsync(new { message = "Manager-, HR- eller administratorrolle kreves for å endre planleggingsdata." });
+                    return;
+                }
+            }
+            await nextRequest();
+        });
+        next(app);
     };
 }
 
