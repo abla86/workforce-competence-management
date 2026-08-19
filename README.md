@@ -1,193 +1,112 @@
-﻿# Workforce & Competence Management System
+# Vaktklar – Workforce & Competence Management
 
-Full-stack application for workforce planning, competence management, staffing coverage and gap analysis.
+Full-stack bemannings- og kompetanseløsning for ledere, skiftplanleggere og kompetanseansvarlige.
 
-The system is industry-neutral and demonstrates how employee competence, staffing requirements and operational planning can be combined in one application.
+Målet er at systemet skal **redusere planleggingsarbeid**, ikke skape mer. Det kombinerer bemanning, kompetanse, fravær, dekningsanalyse og kandidatforslag i samme arbeidsflyt.
 
-## Core capabilities
+## Hva systemet gjør
 
-- Employee overview and workforce profiles
-- Competence matrix with proficiency levels
-- Competence validity and review status
-- Shift planning
-- Minimum staffing requirements
-- Competence requirements per shift
-- Automatic staffing gap analysis
-- Automatic competence gap analysis
-- Coverage percentage calculations
-- Clear GREEN / AMBER / RED status indicators
-- Status text in addition to color for accessibility
-- Dashboard for workforce and competence overview
-- Search and filtering
+- Ansatt- og kompetanseoversikt
+- Kompetansenivå og gyldighetsdato
+- Automatisk varsling om utløpt/nær utløpt kompetanse
+- Vaktplanlegging
+- Minimumsbemanning per vakt
+- Kompetansekrav per vakt
+- Kritiske kompetansekrav
+- Automatisk GREEN / YELLOW / RED-vurdering
+- Forklaring på hvorfor en vakt ikke er dekket
+- Kandidatforslag for manglende bemanning
+- Hard-validering av kompetanse før tildeling
+- Fraværsregistrering
+- «Hva hvis denne ansatte blir borte?»-scenario
+- Dashboard med handlingsprioritering
+- Audit-logg
+- Rollebasert tilgang
+- HTTP-only autentiseringscookie
+- Rate limiting på innlogging
+- PWA/app-shell for mobil bruk
+- Docker Compose
+- GitHub Actions CI
 
-## Technology stack
+## Teknologi
 
 ### Frontend
 
-- React
-- Vite
+- React 19
+- Vite 7
 - JavaScript
-- Responsive CSS
+- Responsiv CSS
+- PWA manifest/service worker
 
 ### Backend
 
 - C#
 - .NET 9
 - ASP.NET Core
-- REST API
+- Minimal APIs
 - Entity Framework Core
-
-### Data
-
 - SQL Server
-- Relational data model
-- Employee / competence many-to-many relationships
-- Shift assignments
-- Shift competence requirements
+- JWT-baserte autentiseringscookies
+- BCrypt-passordhashing
 
 ### Engineering
 
 - xUnit
-- Docker
-- Docker Compose
+- Docker / Docker Compose
 - GitHub Actions
-- CodeQL
 - Dependabot
+- CodeQL
 - Git
 - GitHub
 
-## Architecture
+## Sikkerhet
 
-    React frontend
-          |
-          v
-    ASP.NET Core REST API
-          |
-          v
-    Entity Framework Core
-          |
-          v
-       SQL Server
+API-et krever autentisering for applikasjonsdata. Skriveoperasjoner krever Admin, Manager eller HR-rolle. Innlogging er ratebegrenset, og kontoer låses midlertidig etter gjentatte feilforsøk.
 
-The complete stack can run locally using Docker Compose.
+Produksjonsdeploy skal bruke eksterne secrets for databasepassord, JWT-nøkkel og bootstrap-nøkkel. Se `README-SECURITY.md`.
 
-## Dashboard
+## Viktig om produksjonsstatus
 
-The dashboard summarizes:
+Repoet er betydelig utvidet, men dette skal **ikke** beskrives som ferdig produksjonssystem for ekte ansattdata ennå. Før produksjon må blant annet OIDC/etablert identitetsleverandør, MFA, full CSRF-vurdering, sentral audit-identitet, secret rotation, ekstern logging/monitorering, ordentlige EF Core-migrasjoner, backup/restore-testing og formell GDPR-/sikkerhetsgjennomgang ferdigstilles.
 
-- active employees
-- tracked competences
-- overall competence coverage
-- shifts requiring action
-- staffing status
-- competence status
+## Kjør lokalt
 
-## Status model
+Kopier `.env.example` til `.env` og sett egne verdier for:
 
-The application does not rely on color alone.
+- `DB_PASSWORD`
+- `JWT_SECRET_KEY`
+- `VAKTKLAR_BOOTSTRAP_KEY`
 
-- GREEN: GOOD / COVERED / ACTIVE
-- AMBER: ATTENTION / REVIEW DUE
-- RED: ACTION REQUIRED / MISSING / UNDERSTAFFED
+Deretter:
 
-This makes operational gaps easy to identify while preserving accessibility.
+```bash
+docker compose up --build
+```
 
-## Gap analysis
+Frontend: `http://localhost:8088`
 
-For each shift, the application evaluates both:
+API: `http://localhost:5080`
 
-1. whether minimum staffing requirements are met
-2. whether required competence is available at the required proficiency level
+Health: `http://localhost:5080/health`
 
-Example:
+Første administrator opprettes én gang via `/api/auth/bootstrap` med bootstrap-nøkkelen. Se `README-SECURITY.md`.
 
-    Evening shift
-    Staffing: 3 / 4       UNDERSTAFFED
-    First aid: 2 / 1      COVERED
-    Advanced assessment: 0 / 1   MISSING
+## Tester og CI
 
-The result is summarized as either GOOD or ACTION REQUIRED.
+GitHub Actions bygger og tester backend, lint/build-er frontend og bygger Docker Compose-stacken. CI-status må alltid verifiseres mot den konkrete workflow-kjøringen; README-et påstår ikke at en lokal kjøring er utført når den ikke er dokumentert.
 
-## Automated verification
+## Demo-data
 
-Backend coverage logic is tested with xUnit.
+All eksisterende ansatt-, kompetanse- og vaktdata er fiktive demonstrasjonsdata. Det skal ikke legges inn reelle personopplysninger i dette offentlige repoet.
 
-Verified locally:
+## Formål
 
-- API build succeeds
-- 3/3 backend tests pass
-- frontend lint passes
-- frontend production build passes
-- SQL Server runs successfully in Docker
-- ASP.NET Core API connects to SQL Server through Entity Framework Core
-- React frontend runs successfully through Docker Compose
+Prosjektet er utviklet som en reell full-stack demonstrator rundt et konkret bemannings- og kompetanseproblem, med vekt på forklarbare regler, brukervennlighet, automatisering og sikkerhet.
 
-## Run with Docker Compose
-
-From the repository root:
-
-    docker compose up --build
-
-Frontend:
-
-    http://localhost:8088
-
-API:
-
-    http://localhost:5080
-
-Health endpoint:
-
-    http://localhost:5080/health
-
-Stop the stack:
-
-    docker compose down
-
-## Local development
-
-### Backend
-
-    cd backend\Workforce.Api
-    dotnet restore
-    dotnet run
-
-### Backend tests
-
-    dotnet test backend\Workforce.Api.Tests\Workforce.Api.Tests.csproj --configuration Release
-
-### Frontend
-
-    cd frontend
-    npm install
-    npm run dev
-
-### Frontend verification
-
-    npm run lint
-    npm run build
-
-## Demo data
-
-All employee and competence data in this repository is fictional demonstration data.
-
-No real employee, patient or sensitive personal information is included.
-
-## Purpose
-
-This project demonstrates full-stack development using a practical workforce-management problem rather than a single technology exercise.
-
-It combines frontend development, backend APIs, relational data, business rules, automated testing, containerization and development automation in one system.
-
-## Author
+## Forfatter
 
 Anne Beth Andersen
 
-## Portfolio
+## Portefølje
 
-This project is the current featured full-stack project in my developer portfolio.
-
-The portfolio also presents the complete development progression, including JavaScript applications, React, Python, C#, REST APIs, SQL, Docker and CI/security workflows.
-
-Portfolio:
-https://abla86.github.io/developer-portfolio/
+Prosjektet er et sentralt full-stack-prosjekt i utviklerporteføljen.
