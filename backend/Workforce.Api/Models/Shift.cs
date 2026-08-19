@@ -9,4 +9,6 @@ public sealed class Shift
     public int MinimumStaff { get; set; }
     public List<ShiftAssignment> Assignments { get; set; } = [];
     public List<ShiftRequirement> Requirements { get; set; } = [];
+    public List<ShiftTask> ShiftTasks { get; set; } = [];
+    public List<CoverageAuditEntry> CoverageAudits { get; set; } = [];
 }
