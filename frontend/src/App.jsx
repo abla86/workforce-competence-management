@@ -6,6 +6,7 @@ import Competence from "./pages/Competence.jsx";
 import Shifts from "./pages/Shifts.jsx";
 import GapAnalysis from "./pages/GapAnalysis.jsx";
 import Vaktklar from "./pages/Vaktklar.jsx";
+import Plan from "./pages/Plan.jsx";
 import { api } from "./services/api.js";
 
 export default function App() {
@@ -21,13 +22,10 @@ export default function App() {
   const reload = useCallback(async () => {
     setLoading(true);
     try {
-      const [d, e, c, s] = await Promise.all([
-        api.dashboard(), api.employees(), api.competences(), api.shifts(),
-      ]);
+      const [d, e, c, s] = await Promise.all([api.dashboard(), api.employees(), api.competences(), api.shifts()]);
       setDashboard(d); setEmployees(e); setCompetences(c); setShifts(s); setError("");
-    } catch (err) {
-      setError(err.message || "Kunne ikke koble til API-et.");
-    } finally { setLoading(false); }
+    } catch (err) { setError(err.message || "Kunne ikke koble til API-et."); }
+    finally { setLoading(false); }
   }, []);
 
   useEffect(() => { reload(); }, [reload]);
@@ -40,6 +38,7 @@ export default function App() {
   let content;
   if (loading && !dashboard) content = <div className="loading-state">Laster bemanningsdata...</div>;
   else if (page === "vaktklar") content = <Vaktklar shifts={shifts} employees={employees} competences={competences} api={api} mutate={mutate} />;
+  else if (page === "plan") content = <Plan api={api} />;
   else if (page === "employees") content = <Employees employees={employees} competences={competences} api={api} mutate={mutate} />;
   else if (page === "competence") content = <Competence employees={employees} competences={competences} api={api} mutate={mutate} />;
   else if (page === "shifts") content = <Shifts shifts={shifts} employees={employees} competences={competences} api={api} mutate={mutate} />;
