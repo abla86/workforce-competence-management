@@ -58,7 +58,7 @@ using (var scope = app.Services.CreateScope())
     await SeedData.InitializeAsync(db);
 }
 
-app.MapGet("/", () => Results.Ok(new { name = "Workforce & Competence Management API", version = "4.0.0", status = "running" }));
+app.MapGet("/", () => Results.Ok(new { name = "Workforce & Competence Management API", version = "4.1.0", status = "running" }));
 app.MapGet("/health", async (AppDbContext db) =>
 {
     var databaseOk = await db.Database.CanConnectAsync();
@@ -140,6 +140,41 @@ app.MapGet("/api/shifts", async (AppDbContext db, CoverageService coverage) =>
     var shifts = await db.Shifts.Include(x => x.Assignments).ThenInclude(x => x.Employee).ThenInclude(x => x.Competences).Include(x => x.Requirements).ThenInclude(x => x.Competence).OrderBy(x => x.Date).ThenBy(x => x.StartTime).ToListAsync();
     return Results.Ok(shifts.Select(coverage.AnalyzeShift));
 });
+
+app.MapGet("/api/shifts/{id:int}/coverage", async (int id, AppDbContext db, CoverageService coverage, HttpContext http) =>
+{
+    try
+    {
+        var actor = http.User.Identity?.Name ?? "system";
+        return Results.Ok(await coverage.EvaluateShiftAsync(db, id, actor));
+    }
+    catch (ArgumentException ex) { return Results.NotFound(new { message = ex.Message }); }
+});
+
+app.MapPost("/api/shifts/{id:int}/coverage/scenario", async (int id, CoverageScenarioRequest request, AppDbContext db, CoverageService coverage, HttpContext http) =>
+{
+    if (request.RemoveEmployeeIds is null || request.RemoveEmployeeIds.Count == 0)
+        return Results.BadRequest(new { message = "At least one employee ID must be supplied." });
+    try
+    {
+        var actor = http.User.Identity?.Name ?? "system";
+        return Results.Ok(await coverage.EvaluateScenarioAsync(db, id, request.RemoveEmployeeIds.Distinct().ToArray(), actor));
+    }
+    catch (ArgumentException ex) { return Results.NotFound(new { message = ex.Message }); }
+});
+
+app.MapGet("/api/shifts/{id:int}/coverage/history", async (int id, AppDbContext db, int take = 20) =>
+{
+    if (!await db.Shifts.AnyAsync(x => x.Id == id)) return Results.NotFound();
+    var entries = await db.AuditEvents
+        .Where(x => x.EntityType == "Shift" && x.EntityId == id.ToString() &&
+                    (x.Action == "shift.coverage.evaluated" || x.Action == "shift.coverage.scenario"))
+        .OrderByDescending(x => x.OccurredAtUtc)
+        .Take(Math.Clamp(take, 1, 100))
+        .ToListAsync();
+    return Results.Ok(entries);
+});
+
 app.MapPost("/api/shifts", async (CreateShiftRequest request, AppDbContext db) =>
 {
     if (request.MinimumStaff <= 0 || request.Hours <= 0 || request.Hours > 24) return Results.BadRequest(new { message = "Invalid shift values." });
@@ -238,5 +273,7 @@ static async Task Audit(AppDbContext db, string action, string entityType, strin
     db.AuditEvents.Add(new AuditEvent { Action = action, EntityType = entityType, EntityId = entityId, Reason = reason, Actor = "system" });
     await db.SaveChangesAsync();
 }
+
+public sealed record CoverageScenarioRequest(IReadOnlyList<int> RemoveEmployeeIds);
 
 public partial class Program { }
