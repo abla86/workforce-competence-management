@@ -200,15 +200,18 @@ public sealed class CoverageEvaluationEngine
 
     private async Task<bool> HasSchedulingConflictAsync(int employeeId, Shift shift)
     {
-        if (shift.StartTime is null || shift.EndTime is null) return false;
-        return await _db.Shifts.AnyAsync(s => s.Id != shift.Id && s.StartTime.HasValue && s.EndTime.HasValue && s.StartTime < shift.EndTime && s.EndTime > shift.StartTime && (s.Assignments.Any(a => a.EmployeeId == employeeId) || s.ShiftTasks.Any(st => st.ShiftTaskCoverages.Any(sc => sc.EmployeeId == employeeId))));
+        return await _db.Shifts.AnyAsync(s => s.Id != shift.Id && s.StartTime < shift.EndTime && s.EndTime > shift.StartTime &&
+            (s.Assignments.Any(a => a.EmployeeId == employeeId) || s.ShiftTasks.Any(st => st.ShiftTaskCoverages.Any(sc => sc.EmployeeId == employeeId))));
     }
 
     private async Task<bool> ViolatesRestAsync(int employeeId, Shift shift)
     {
-        if (shift.StartTime is null) return false;
-        var previous = await _db.Shifts.Where(s => s.Id != shift.Id && s.EndTime.HasValue && s.EndTime <= shift.StartTime && (s.Assignments.Any(a => a.EmployeeId == employeeId) || s.ShiftTasks.Any(st => st.ShiftTaskCoverages.Any(sc => sc.EmployeeId == employeeId)))).OrderByDescending(s => s.EndTime).FirstOrDefaultAsync();
-        return previous?.EndTime is DateTime end && (shift.StartTime.Value - end).TotalHours < MinimumRestHours;
+        var previous = await _db.Shifts
+            .Where(s => s.Id != shift.Id && s.EndTime <= shift.StartTime &&
+                (s.Assignments.Any(a => a.EmployeeId == employeeId) || s.ShiftTasks.Any(st => st.ShiftTaskCoverages.Any(sc => sc.EmployeeId == employeeId))))
+            .OrderByDescending(s => s.EndTime)
+            .FirstOrDefaultAsync();
+        return previous is not null && (shift.StartTime - previous.EndTime).TotalHours < MinimumRestHours;
     }
 
     private static int LevelRank(string level) => int.TryParse(level, out var numeric) ? numeric : level.Trim().ToLowerInvariant() switch { "basic" => 1, "intermediate" => 2, "advanced" => 3, "expert" => 4, _ => 0 };
