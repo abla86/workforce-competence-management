@@ -9,4 +9,5 @@ public sealed class Employee
     public bool IsActive { get; set; } = true;
     public List<EmployeeCompetence> Competences { get; set; } = [];
     public List<ShiftAssignment> ShiftAssignments { get; set; } = [];
+    public List<EmployeeAvailability> Availability { get; set; } = [];
 }
