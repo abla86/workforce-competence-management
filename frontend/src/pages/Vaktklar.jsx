@@ -1,53 +1,172 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import "./Vaktklar.css";
 
-const STORAGE_KEY = "vaktklar-task-prototype-v1";
-const defaultTasks = [
-  { name: "Legemiddelutdeling", competency: "Medication management", count: 1, critical: true },
-  { name: "Tilsyn og fallforebygging", competency: "First aid", count: 1, critical: false },
-  { name: "Dokumentasjon", competency: "System training", count: 1, critical: false },
-];
-function loadTasks() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || defaultTasks; } catch { return defaultTasks; } }
-function saveTasks(tasks) { localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks)); }
-function evaluateShift(shift, tasks) {
-  const issues = [];
-  if (shift.assignedStaff < shift.minimumStaff) issues.push({ type: "staff", text: `Mangler ${shift.minimumStaff - shift.assignedStaff} person(er)` });
-  const requirements = shift.requirements || [];
-  requirements.forEach(r => { if (!r.covered) issues.push({ type: "competence", text: `${r.competence}: ${r.qualifiedCount}/${r.minimumCount} kvalifisert` }); });
-  tasks.filter(t => shift.taskNames?.includes(t.name)).forEach(t => { const r = requirements.find(x => x.competence === t.competency); if (r && !r.covered) issues.push({ type: "task", text: `${t.name} kan ikke dekkes med registrert kompetanse` }); });
-  return { level: issues.length ? "bad" : "ok", issues };
-}
+const STATUS = {
+  Green: { label: "Klar", className: "good" },
+  Yellow: { label: "Krever kontroll", className: "warning" },
+  Red: { label: "Ikke klar", className: "bad" },
+};
 
 export default function Vaktklar({ shifts = [], employees = [], competences = [], api, mutate }) {
-  const [tasks, setTasks] = useState(loadTasks);
   const [view, setView] = useState("oversikt");
   const [selected, setSelected] = useState(null);
-  const [form, setForm] = useState({ name: "", competency: "", count: 1, critical: false });
-  const [generator, setGenerator] = useState({ meds: 8, falls: 2, wounds: 1, docs: 1 });
-  const [generated, setGenerated] = useState([]);
+  const [coverage, setCoverage] = useState({});
+  const [loadingCoverage, setLoadingCoverage] = useState(false);
+  const [coverageError, setCoverageError] = useState("");
   const [candidateState, setCandidateState] = useState({ shiftId: null, loading: false, candidates: [], error: "" });
+  const [scenarioState, setScenarioState] = useState({ shiftId: null, selected: [], loading: false, result: null, error: "" });
 
-  useEffect(() => saveTasks(tasks), [tasks]);
-  const evaluations = useMemo(() => shifts.map(shift => ({ shift, result: evaluateShift(shift, tasks) })), [shifts, tasks]);
-  const red = evaluations.filter(x => x.result.level === "bad").length;
+  const evaluateAll = useCallback(async () => {
+    if (!api?.coverage || shifts.length === 0) {
+      setCoverage({});
+      return;
+    }
+    setLoadingCoverage(true);
+    setCoverageError("");
+    try {
+      const results = await Promise.all(shifts.map(async shift => [shift.id, await api.coverage(shift.id)]));
+      setCoverage(Object.fromEntries(results));
+    } catch (error) {
+      setCoverageError(error.message || "Kunne ikke hente Vaktklar-vurdering.");
+    } finally {
+      setLoadingCoverage(false);
+    }
+  }, [api, shifts]);
 
-  function addTask(e) { e.preventDefault(); if (!form.name.trim() || !form.competency) return; setTasks(c => [...c.filter(x => x.name !== form.name.trim()), { ...form, name: form.name.trim(), count: Number(form.count) }]); setForm({ name: "", competency: "", count: 1, critical: false }); }
-  function generate(e) { e.preventDefault(); const s = []; if (+generator.meds) s.push({ name: "Legemiddelutdeling", competency: "Medication management", count: Math.max(1, Math.ceil(+generator.meds / 12)), critical: true }); if (+generator.falls) s.push({ name: "Tilsyn og fallforebygging", competency: "First aid", count: Math.max(1, Math.ceil(+generator.falls / 5)), critical: false }); if (+generator.wounds) s.push({ name: "Sårstell", competency: competences.find(c => /wound|sår/i.test(c.name))?.name || "Medication management", count: 1, critical: true }); if (+generator.docs) s.push({ name: "Dokumentasjon", competency: "System training", count: 1, critical: false }); setGenerated(s); }
-  function accept() { setTasks(c => [...c.filter(x => !new Set(generated.map(g => g.name)).has(x.name)), ...generated]); setGenerated([]); }
+  useEffect(() => { evaluateAll(); }, [evaluateAll]);
+
+  const evaluations = useMemo(() => shifts.map(shift => {
+    const result = coverage[shift.id];
+    return { shift, result, status: result?.status || "Pending" };
+  }), [coverage, shifts]);
+
+  const red = evaluations.filter(x => x.status === "Red").length;
+  const yellow = evaluations.filter(x => x.status === "Yellow").length;
+  const green = evaluations.filter(x => x.status === "Green").length;
+
   async function replacement(shift) {
-    if (!api?.candidates || !shift.id) return;
     setCandidateState({ shiftId: shift.id, loading: true, candidates: [], error: "" });
-    try { const candidates = await api.candidates(shift.id); setCandidateState({ shiftId: shift.id, loading: false, candidates, error: "" }); }
-    catch (e) { setCandidateState({ shiftId: shift.id, loading: false, candidates: [], error: e.message || "Kunne ikke hente kandidater." }); }
+    try {
+      const candidates = await api.candidates(shift.id);
+      setCandidateState({ shiftId: shift.id, loading: false, candidates, error: "" });
+    } catch (error) {
+      setCandidateState({ shiftId: shift.id, loading: false, candidates: [], error: error.message || "Kunne ikke hente kandidater." });
+    }
   }
 
+  async function simulate(shift) {
+    const selectedIds = scenarioState.selected;
+    if (!selectedIds.length) return;
+    setScenarioState(state => ({ ...state, shiftId: shift.id, loading: true, result: null, error: "" }));
+    try {
+      const result = await api.coverageScenario(shift.id, selectedIds);
+      setScenarioState(state => ({ ...state, loading: false, result, error: "" }));
+    } catch (error) {
+      setScenarioState(state => ({ ...state, loading: false, result: null, error: error.message || "Scenarioanalysen feilet." }));
+    }
+  }
+
+  function toggleScenarioEmployee(employeeId) {
+    setScenarioState(state => ({
+      ...state,
+      selected: state.selected.includes(employeeId)
+        ? state.selected.filter(id => id !== employeeId)
+        : [...state.selected, employeeId],
+    }));
+  }
+
+  function refresh() {
+    mutate?.(evaluateAll, "Vaktklar er oppdatert.");
+  }
+
+  const allTasks = useMemo(() => {
+    const map = new Map();
+    Object.values(coverage).forEach(result => (result?.tasks || []).forEach(task => map.set(task.taskName, task)));
+    return [...map.values()].sort((a, b) => a.taskName.localeCompare(b.taskName));
+  }, [coverage]);
+
   return <div className="vaktklar">
-    <div className="page-heading action-heading"><div><p className="kicker">Vaktklar</p><h1>Bemanning og kompetanse</h1><p>Kontroller at hver vakt har nok folk med riktig kompetanse til arbeidsoppgavene.</p></div><button className="primary-button" onClick={() => mutate?.(() => Promise.resolve(), "Vaktklar er oppdatert.")}>Oppdater kontroll</button></div>
-    <nav className="vaktklar-tabs" aria-label="Vaktklar">{[["oversikt", "Oversikt"], ["vakter", "Vakter"], ["oppgaver", "Arbeidsoppgaver"], ["ansatte", "Ansatte og kompetanse"]].map(([id, label]) => <button key={id} className={view === id ? "active" : ""} onClick={() => setView(id)}>{label}</button>)}</nav>
-    {view === "oversikt" && <><div className="metrics"><div className="metric-card"><span>Vakter i planen</span><strong>{evaluations.length}</strong><small>Registrerte vakter</small></div><div className="metric-card"><span>Vakter klare</span><strong className="vaktklar-green">{evaluations.length - red}</strong><small>Alle registrerte krav dekket</small></div><div className="metric-card"><span>Krever handling</span><strong className="vaktklar-red">{red}</strong><small>Bemanning eller kompetanse</small></div><div className="metric-card"><span>Ansatte</span><strong>{employees.length}</strong><small>Registrerte i systemet</small></div></div><section className="panel"><div className="panel-heading"><div><h2>Varsler som krever handling</h2><p>Systemet viser hvorfor en vakt ikke er klar.</p></div></div>{evaluations.filter(x => x.result.level === "bad").map(({ shift, result }) => <div className="vaktklar-alert bad" key={shift.id}><strong>{shift.date} · {shift.shiftType}</strong>{result.issues.map(i => <span key={i.text}>• {i.text}</span>)}<button className="primary-button" onClick={() => replacement(shift)}>Finn kvalifisert erstatter</button>{candidateState.shiftId === shift.id && <CandidatePanel state={candidateState} />}</div>)}{!red && <div className="vaktklar-alert good"><strong>Ingen åpne avvik</strong><span>Alle registrerte vakter tilfredsstiller kravene.</span></div>}</section></>}
-    {view === "vakter" && <section className="panel"><div className="panel-heading"><div><h2>Vaktplan og kontroll</h2><p>Rød betyr at et obligatorisk krav mangler.</p></div></div><div className="vaktklar-shifts">{evaluations.map(({ shift, result }) => <article className={`vaktklar-shift ${result.level}`} key={shift.id}><button className="vaktklar-shift-main" onClick={() => setSelected(selected === shift.id ? null : shift.id)}><div><strong>{shift.date}</strong><span>{shift.shiftType} · {shift.hours} t</span></div><div><strong>{shift.assignedStaff}/{shift.minimumStaff}</strong><span>bemanning</span></div><span className={`status ${result.level === "ok" ? "good" : "bad"}`}>{result.level === "ok" ? "Klar" : "Ikke klar"}</span></button>{selected === shift.id && <div className="vaktklar-details"><h3>Hvorfor?</h3>{result.issues.length ? result.issues.map(i => <p key={i.text}>• {i.text}</p>) : <p className="vaktklar-green">Alle registrerte krav er dekket.</p>}<h3>Registrerte krav</h3>{(shift.requirements || []).map(r => <p key={r.competence}>{r.competence}: {r.qualifiedCount}/{r.minimumCount} · {r.covered ? "OK" : "MANGLER"}</p>)}<button className="primary-button" onClick={() => replacement(shift)}>Finn erstatter</button>{candidateState.shiftId === shift.id && <CandidatePanel state={candidateState} />}</div>}</article>)}</div></section>}
-    {view === "oppgaver" && <div className="two"><section className="panel"><div className="panel-heading"><div><h2>Automatisk oppgaveforslag</h2><p>Forslagene kan redigeres før de brukes som krav.</p></div></div><form className="form-grid" onSubmit={generate}><label>Brukere med legemidler<input type="number" min="0" value={generator.meds} onChange={e => setGenerator({ ...generator, meds: e.target.value })} /></label><label>Høy fallrisiko<input type="number" min="0" value={generator.falls} onChange={e => setGenerator({ ...generator, falls: e.target.value })} /></label><label>Sårstell<input type="number" min="0" value={generator.wounds} onChange={e => setGenerator({ ...generator, wounds: e.target.value })} /></label><label>Dokumentasjon<input type="number" min="0" value={generator.docs} onChange={e => setGenerator({ ...generator, docs: e.target.value })} /></label><div className="form-actions"><button className="primary-button">Generer forslag</button></div></form>{generated.length > 0 && <div className="vaktklar-generated"><h3>Forslag</h3>{generated.map(t => <div key={t.name}><strong>{t.name}</strong><span>{t.count} × {t.competency}{t.critical ? " · Kritisk" : ""}</span></div>)}<button className="primary-button" onClick={accept}>Godkjenn forslag</button></div>}</section><section className="panel"><div className="panel-heading"><div><h2>Definer arbeidsoppgave</h2><p>Kravene lagres lokalt i prototypen.</p></div></div><form className="form-grid" onSubmit={addTask}><label>Oppgave<input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></label><label>Kompetanse<select required value={form.competency} onChange={e => setForm({ ...form, competency: e.target.value })}><option value="">Velg</option>{competences.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}</select></label><label>Minimum personer<input type="number" min="1" value={form.count} onChange={e => setForm({ ...form, count: e.target.value })} /></label><div className="form-actions"><button className="primary-button">Lagre</button></div></form><div className="vaktklar-task-list">{tasks.map(t => <div key={t.name}><strong>{t.name}</strong><span>{t.count} × {t.competency}{t.critical ? " · Kritisk" : ""}</span><button className="mini-danger" onClick={() => setTasks(c => c.filter(x => x.name !== t.name))}>Fjern</button></div>)}</div></section></div>}
-    {view === "ansatte" && <section className="panel"><div className="panel-heading"><div><h2>Ansatte og kompetanse</h2><p>Data hentes fra eksisterende backend.</p></div></div><div className="vaktklar-staff-grid">{employees.map(e => <article key={e.id}><strong>{e.name}</strong><span>{e.role} · {e.positionPercent}%</span><div>{(e.competences || []).map(c => <small key={c.competenceId}>{c.name} · {c.level} {c.status === "EXPIRED" ? "· UTLØPT" : ""}</small>)}</div></article>)}</div></section>}
+    <div className="page-heading action-heading">
+      <div><p className="kicker">Vaktklar</p><h1>Bemanning og kompetanse</h1><p>Reell coverage-evaluering fra backend: bemanning, kompetanse, rolle, tilgjengelighet, overlapp og hviletid.</p></div>
+      <button className="primary-button" onClick={refresh} disabled={loadingCoverage}>{loadingCoverage ? "Kontrollerer…" : "Oppdater kontroll"}</button>
+    </div>
+
+    <nav className="vaktklar-tabs" aria-label="Vaktklar">
+      {[["oversikt", "Oversikt"], ["vakter", "Vakter"], ["oppgaver", "Arbeidsoppgaver"], ["ansatte", "Ansatte og kompetanse"]].map(([id, label]) => <button key={id} className={view === id ? "active" : ""} onClick={() => setView(id)}>{label}</button>)}
+    </nav>
+
+    {coverageError && <div className="vaktklar-alert bad"><strong>Coverage-feil</strong><span>{coverageError}</span></div>}
+
+    {view === "oversikt" && <>
+      <div className="metrics">
+        <div className="metric-card"><span>Vakter i planen</span><strong>{evaluations.length}</strong><small>Registrerte vakter</small></div>
+        <div className="metric-card"><span>Vakter klare</span><strong className="vaktklar-green">{green}</strong><small>Ingen registrerte avvik</small></div>
+        <div className="metric-card"><span>Krever kontroll</span><strong>{yellow}</strong><small>Ikke-kritiske avvik eller bemanningsmangel</small></div>
+        <div className="metric-card"><span>Ikke klare</span><strong className="vaktklar-red">{red}</strong><small>Kritisk coverage-avvik</small></div>
+      </div>
+      <section className="panel">
+        <div className="panel-heading"><div><h2>Varsler som krever handling</h2><p>Statusen kommer fra CoverageEvaluationEngine.</p></div></div>
+        {evaluations.filter(x => x.status === "Red" || x.status === "Yellow").map(({ shift, result, status }) => {
+          const meta = STATUS[status];
+          return <div className={`vaktklar-alert ${meta?.className || "bad"}`} key={shift.id}>
+            <strong>{shift.date} · {shift.shiftType}</strong>
+            {(result?.warnings || []).map(w => <span key={w}>• {w}</span>)}
+            {(result?.tasks || []).filter(t => t.gaps?.length).slice(0, 5).map(t => <span key={t.taskName}>• {t.taskName}: {t.gaps[0].description}</span>)}
+            <button className="primary-button" onClick={() => replacement(shift)}>Finn kvalifisert erstatter</button>
+            {candidateState.shiftId === shift.id && <CandidatePanel state={candidateState} />}
+          </div>;
+        })}
+        {!red && !yellow && <div className="vaktklar-alert good"><strong>Ingen åpne avvik</strong><span>Alle registrerte vakter er vurdert som klare.</span></div>}
+      </section>
+    </>}
+
+    {view === "vakter" && <section className="panel">
+      <div className="panel-heading"><div><h2>Vaktplan og kontroll</h2><p>Trykk på en vakt for detaljert coverage.</p></div></div>
+      <div className="vaktklar-shifts">
+        {evaluations.map(({ shift, result, status }) => {
+          const meta = STATUS[status];
+          const open = selected === shift.id;
+          return <article className={`vaktklar-shift ${meta?.className || "warning"}`} key={shift.id}>
+            <button className="vaktklar-shift-main" onClick={() => setSelected(open ? null : shift.id)}>
+              <div><strong>{shift.date}</strong><span>{shift.shiftType} · {shift.hours} t</span></div>
+              <div><strong>{shift.assignedStaff}/{shift.minimumStaff}</strong><span>bemanning</span></div>
+              <span className={`status ${meta?.className || "warning"}`}>{meta?.label || "Vurderer…"}</span>
+            </button>
+            {open && <div className="vaktklar-details">
+              {!result && <p>Henter coverage…</p>}
+              {result && <>
+                <h3>Resultat</h3><p><strong>{meta?.label || result.status}</strong></p>
+                {(result.warnings || []).map(w => <p key={w}>• {w}</p>)}
+                <h3>Arbeidsoppgaver</h3>
+                {(result.tasks || []).map(task => <div key={task.taskName} className="task-result"><strong>{task.taskName}</strong><span>{task.actual}/{task.required} · {task.critical ? "Kritisk" : "Ikke-kritisk"}</span>{task.competenceName && <small>Kompetanse: {task.competenceName}</small>}{task.gaps?.map(g => <small key={`${task.taskName}-${g.type}-${g.description}`}>• {g.description}</small>)}</div>)}
+                <button className="primary-button" onClick={() => replacement(shift)}>Finn erstatter</button>
+                {candidateState.shiftId === shift.id && <CandidatePanel state={candidateState} />}
+                <h3>Simuler fravær</h3>
+                <div className="scenario-list">
+                  {employees.map(employee => <label key={employee.id}><input type="checkbox" checked={scenarioState.selected.includes(employee.id)} onChange={() => toggleScenarioEmployee(employee.id)} />{employee.name}</label>)}
+                </div>
+                <button className="secondary-button" disabled={scenarioState.loading || !scenarioState.selected.length} onClick={() => simulate(shift)}>{scenarioState.loading ? "Analyserer…" : "Kjør scenario"}</button>
+                {scenarioState.shiftId === shift.id && scenarioState.error && <p className="vaktklar-red">{scenarioState.error}</p>}
+                {scenarioState.shiftId === shift.id && scenarioState.result && <ScenarioPanel result={scenarioState.result} />}
+              </>}
+            </div>}
+          </article>;
+        })}
+      </div>
+    </section>}
+
+    {view === "oppgaver" && <section className="panel">
+      <div className="panel-heading"><div><h2>Registrerte arbeidsoppgaver</h2><p>Dette er oppgavene CoverageEvaluationEngine faktisk vurderer for vaktene.</p></div></div>
+      {allTasks.length === 0 && <p>Ingen arbeidsoppgaver er registrert på vaktene ennå.</p>}
+      <div className="vaktklar-task-list">{allTasks.map(task => <div key={task.taskName}><strong>{task.taskName}</strong><span>{task.required} × {task.competenceName || "Kompetansekrav ikke angitt"}{task.critical ? " · Kritisk" : ""}</span></div>)}</div>
+      <div className="panel-heading"><div><h2>Kompetanser i systemet</h2><p>{competences.length} registrerte kompetanser.</p></div></div>
+      <div className="vaktklar-task-list">{competences.map(c => <div key={c.id}><strong>{c.name}</strong><span>{c.category || "Generell"}</span></div>)}</div>
+    </section>}
+
+    {view === "ansatte" && <section className="panel">
+      <div className="panel-heading"><div><h2>Ansatte og kompetanse</h2><p>Data hentes fra eksisterende backend.</p></div></div>
+      <div className="vaktklar-staff-grid">{employees.map(employee => <article key={employee.id}><strong>{employee.name}</strong><span>{employee.role} · {employee.positionPercent}%</span><div>{(employee.competences || []).map(c => <small key={c.competenceId}>{c.name} · {c.level} {c.status === "EXPIRED" ? "· UTLØPT" : ""}</small>)}</div></article>)}</div>
+    </section>}
   </div>;
 }
 
@@ -55,5 +174,15 @@ function CandidatePanel({ state }) {
   if (state.loading) return <div className="candidate-panel">Henter kvalifiserte kandidater…</div>;
   if (state.error) return <div className="candidate-panel error">{state.error}</div>;
   if (!state.candidates.length) return <div className="candidate-panel">Ingen kvalifiserte kandidater funnet.</div>;
-  return <div className="candidate-panel"><strong>Kandidater</strong>{state.candidates.slice(0, 5).map((c, i) => <div key={c.employeeId ?? c.id ?? i}><span>{c.name}</span><span>{c.score != null ? `${c.score} %` : "Kvalifisert"}</span></div>)}</div>;
+  return <div className="candidate-panel"><strong>Kvalifiserte kandidater</strong>{state.candidates.slice(0, 8).map(candidate => <div key={candidate.employeeId}><span>{candidate.employeeName}</span><span>{candidate.role} · nivå {candidate.competenceLevel || 0}</span></div>)}</div>;
+}
+
+function ScenarioPanel({ result }) {
+  const status = STATUS[result.coverageWithoutEmployees?.status];
+  const candidates = result.suggestedReplacements || [];
+  return <div className="candidate-panel">
+    <strong>Scenarioresultat: {status?.label || result.coverageWithoutEmployees?.status}</strong>
+    {(result.coverageWithoutEmployees?.warnings || []).map(w => <div key={w}><span>{w}</span></div>)}
+    {candidates.length > 0 && <><strong>Mulige erstattere</strong>{candidates.slice(0, 5).map(candidate => <div key={candidate.employeeId}><span>{candidate.employeeName}</span><span>{candidate.available ? "Kvalifisert" : candidate.missingRequirements.join("; ")}</span></div>)}</>}
+  </div>;
 }
