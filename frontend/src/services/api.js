@@ -2,6 +2,7 @@ const API = import.meta.env.VITE_API_URL ?? "";
 
 async function request(path, options = {}) {
   const response = await fetch(`${API}${path}`, {
+    credentials: "include",
     headers: { "Content-Type": "application/json", ...(options.headers || {}) },
     ...options,
   });
@@ -10,7 +11,6 @@ async function request(path, options = {}) {
     try { const body = await response.json(); message = body.message || message; } catch { /* non-JSON response */ }
     const error = new Error(message);
     error.status = response.status;
-    error.details = await Promise.resolve().then(() => null);
     throw error;
   }
   if (response.status === 204) return null;
@@ -18,6 +18,11 @@ async function request(path, options = {}) {
 }
 
 export const api = {
+  me: () => request("/api/auth/me"),
+  login: (username, password) => request("/api/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
+  logout: () => request("/api/auth/logout", { method: "POST" }),
+  bootstrap: (bootstrapKey, username, password) => request("/api/auth/bootstrap", { method: "POST", body: JSON.stringify({ bootstrapKey, username, password }) }),
+
   dashboard: () => request("/api/dashboard"),
   employees: (params = {}) => request(`/api/employees?${new URLSearchParams(params)}`),
   competences: () => request("/api/competences"),
