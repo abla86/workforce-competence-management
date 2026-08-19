@@ -20,6 +20,11 @@ services:
     environment:
       ASPNETCORE_URLS: "http://+:8080"
       ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=WorkforceCompetenceDb;User Id=sa;Password=$${DB_PASSWORD};TrustServerCertificate=True"
+      Jwt__SecretKey: "${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in .env}"
+      Jwt__Issuer: "vaktklar"
+      Jwt__Audience: "vaktklar-web"
+      VAKTKLAR_BOOTSTRAP_KEY: "${VAKTKLAR_BOOTSTRAP_KEY:?Set VAKTKLAR_BOOTSTRAP_KEY in .env}"
+      Security__CookieSecure: "false"
       Cors__Origins__0: "http://localhost:8088"
       Cors__Origins__1: "http://localhost:5173"
     ports:
