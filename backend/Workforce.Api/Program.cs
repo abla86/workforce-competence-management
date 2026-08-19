@@ -13,6 +13,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddOpenApi();
 builder.Services.AddDataProtection();
 builder.Services.AddScoped<CoverageService>();
+builder.Services.AddScoped<AutoStaffingService>();
+builder.Services.AddScoped<ShiftViabilityService>();
 builder.Services.AddScoped<AuditProtectionService>();
 builder.Services.AddScoped<ShiftAccessService>();
 builder.Services.AddScoped<EmployeeAccessService>();
@@ -69,7 +71,7 @@ app.UseRateLimiter();
 app.MapOpenApi();
 app.MapWorkforceExpansionEndpoints();
 
-app.MapGet("/", () => Results.Ok(new { name = "Workforce & Competence Management API", version = "2.0.0", status = "running" })).AllowAnonymous();
+app.MapGet("/", () => Results.Ok(new { name = "Workforce & Competence Management API", version = "2.1.0", status = "running" })).AllowAnonymous();
 app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow })).AllowAnonymous();
 
 app.MapGet("/api/shifts/{shiftId:int}/coverage", async (int shiftId, CoverageService coverage, ShiftAccessService access, HttpContext http, ILogger<CoverageService> logger) =>
@@ -113,6 +115,78 @@ app.MapPost("/api/shifts/{shiftId:int}/coverage/scenario", async (int shiftId, R
 .RequireAuthorization("CoverageManage")
 .RequireRateLimiting("coverage")
 .WithTags("coverage");
+
+app.MapPost("/api/shifts/{shiftId:int}/auto-staffing", async (int shiftId, AutoStaffingRequest request, AutoStaffingService staffing, ShiftAccessService access, HttpContext http) =>
+{
+    if (!await access.CanAccessShiftAsync(http.User, shiftId)) return Results.Forbid();
+    request.ShiftId = shiftId;
+    var proposals = await staffing.GenerateAsync(request, 10);
+    return Results.Ok(new { shiftId, proposals });
+})
+.RequireAuthorization("CoverageManage")
+.RequireRateLimiting("coverage")
+.WithTags("staffing");
+
+app.MapGet("/api/employees/{employeeId:int}/viability", async (int employeeId, DateTime start, DateTime end, ShiftViabilityService viability, EmployeeAccessService access, HttpContext http) =>
+{
+    if (!await access.CanAccessEmployeeAsync(http.User, employeeId)) return Results.Forbid();
+    if (end <= start) return Results.BadRequest(new { message = "End must be after start." });
+    var result = await viability.CheckAsync(employeeId, start, end);
+    return Results.Ok(result);
+})
+.RequireAuthorization("CoverageManage")
+.WithTags("staffing");
+
+app.MapPost("/api/employees/{employeeId:int}/absences", async (int employeeId, AbsenceRequest request, AppDbContext db, EmployeeAccessService access, HttpContext http) =>
+{
+    if (!await access.CanAccessEmployeeAsync(http.User, employeeId)) return Results.Forbid();
+    if (request.EndDate <= request.StartDate) return Results.BadRequest(new { message = "EndDate must be after StartDate." });
+    var employee = await db.Employees.FindAsync(employeeId);
+    if (employee is null) return Results.NotFound();
+    var absence = new Absence { EmployeeId = employeeId, Type = request.Type, StartDate = request.StartDate, EndDate = request.EndDate, Description = request.Description, IsApproved = false };
+    db.Absences.Add(absence);
+    await db.SaveChangesAsync();
+    return Results.Created($"/api/employees/{employeeId}/absences/{absence.Id}", absence);
+})
+.RequireAuthorization("CoverageManage")
+.WithTags("absence");
+
+app.MapGet("/api/employees/{employeeId:int}/absences", async (int employeeId, AppDbContext db, EmployeeAccessService access, HttpContext http) =>
+{
+    if (!await access.CanAccessEmployeeAsync(http.User, employeeId)) return Results.Forbid();
+    return Results.Ok(await db.Absences.Where(a => a.EmployeeId == employeeId).OrderBy(a => a.StartDate).ToListAsync());
+})
+.RequireAuthorization("CoverageRead")
+.WithTags("absence");
+
+app.MapPost("/api/shift-rules", async (ShiftRule rule, AppDbContext db) =>
+{
+    if (rule.MinimumRestHours < 0 || rule.MaxDispensationHours < 0 || rule.MaxDispensationsPerMonth < 0) return Results.BadRequest();
+    db.ShiftRules.Add(rule);
+    await db.SaveChangesAsync();
+    return Results.Created($"/api/shift-rules/{rule.Id}", rule);
+})
+.RequireAuthorization("CoverageManage")
+.WithTags("rules");
+
+app.MapGet("/api/shift-rules", async (AppDbContext db) => Results.Ok(await db.ShiftRules.Where(r => r.IsActive).OrderBy(r => r.RuleType).ToListAsync()))
+.RequireAuthorization("CoverageRead")
+.WithTags("rules");
+
+app.MapPost("/api/shifts/{shiftId:int}/dispensations", async (int shiftId, CreateDispensationRequest request, AppDbContext db, ShiftAccessService access, HttpContext http) =>
+{
+    if (!await access.CanAccessShiftAsync(http.User, shiftId)) return Results.Forbid();
+    if (string.IsNullOrWhiteSpace(request.Reason)) return Results.BadRequest(new { message = "Reason is required." });
+    var subject = http.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    if (string.IsNullOrWhiteSpace(subject)) return Results.Unauthorized();
+    if (!await db.Shifts.AnyAsync(s => s.Id == shiftId) || !await db.Employees.AnyAsync(e => e.Id == request.EmployeeId)) return Results.NotFound();
+    var item = new ShiftDispensation { ShiftId = shiftId, EmployeeId = request.EmployeeId, BreachedRule = request.BreachedRule, HoursGranted = request.HoursGranted, Reason = request.Reason, GrantedBySubject = subject, ExpiresAt = request.ExpiresAt, Status = DispensationStatus.Approved };
+    db.ShiftDispensations.Add(item);
+    await db.SaveChangesAsync();
+    return Results.Created($"/api/shifts/{shiftId}/dispensations/{item.Id}", item);
+})
+.RequireAuthorization("CoverageManage")
+.WithTags("rules");
 
 app.MapGet("/api/shifts/{shiftId:int}/coverage/history", async (int shiftId, AppDbContext db, ShiftAccessService access, HttpContext http) =>
 {
@@ -172,3 +246,5 @@ app.Run();
 
 public sealed record RemoveEmployeeRequest(List<int> EmployeeIds);
 public sealed record PrivacyRequestType(string Type);
+public sealed record AbsenceRequest(AbsenceType Type, DateTime StartDate, DateTime EndDate, string? Description);
+public sealed record CreateDispensationRequest(int EmployeeId, RuleType BreachedRule, int HoursGranted, string Reason, DateTime? ExpiresAt);
