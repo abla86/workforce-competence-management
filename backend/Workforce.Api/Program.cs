@@ -1,7 +1,7 @@
 using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
-using Workforce.Api.Data;
 using Workforce.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -12,6 +12,28 @@ builder.Services.AddScoped<CoverageService>();
 builder.Services.AddScoped<AuditProtectionService>();
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+var authority = builder.Configuration["Authentication:Authority"];
+var audience = builder.Configuration["Authentication:Audience"];
+
+if (string.IsNullOrWhiteSpace(authority) || string.IsNullOrWhiteSpace(audience))
+    throw new InvalidOperationException("Authentication:Authority and Authentication:Audience must be configured before starting the API.");
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.Authority = authority;
+        options.Audience = audience;
+        options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
+    });
+
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy("CoverageRead", policy => policy
+        .RequireAuthenticatedUser()
+        .RequireRole("Employee", "Manager", "HR", "Admin"))
+    .AddPolicy("CoverageManage", policy => policy
+        .RequireAuthenticatedUser()
+        .RequireRole("Manager", "HR", "Admin"));
 
 builder.Services.AddRateLimiter(options =>
 {
@@ -34,18 +56,16 @@ builder.Services.AddCors(options => options.AddDefaultPolicy(policy =>
 var app = builder.Build();
 if (!app.Environment.IsDevelopment()) app.UseHttpsRedirection();
 app.UseCors();
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseRateLimiter();
 app.MapOpenApi();
 app.MapWorkforceExpansionEndpoints();
 
-using (var scope = app.Services.CreateScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    await SeedData.InitializeAsync(db);
-}
-
-app.MapGet("/", () => Results.Ok(new { name = "Workforce & Competence Management API", version = "2.0.0", status = "running" }));
-app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
+app.MapGet("/", () => Results.Ok(new { name = "Workforce & Competence Management API", version = "2.0.0", status = "running" }))
+    .AllowAnonymous();
+app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }))
+    .AllowAnonymous();
 
 app.MapGet("/api/shifts/{shiftId:int}/coverage", async (
     int shiftId,
@@ -55,7 +75,7 @@ app.MapGet("/api/shifts/{shiftId:int}/coverage", async (
 {
     try
     {
-        var result = await coverage.EvaluateAsync(shiftId, "system", http);
+        var result = await coverage.EvaluateAsync(shiftId, http.User.Identity?.Name ?? "system", http);
         logger.LogInformation("Coverage evaluated for shift {ShiftId}: {Status}", shiftId, result.Status);
         return Results.Ok(result);
     }
@@ -69,6 +89,7 @@ app.MapGet("/api/shifts/{shiftId:int}/coverage", async (
         return Results.Problem("Internal server error");
     }
 })
+.RequireAuthorization("CoverageRead")
 .RequireRateLimiting("coverage")
 .WithTags("coverage");
 
@@ -108,6 +129,7 @@ app.MapPost("/api/shifts/{shiftId:int}/coverage/scenario", async (
 
     return Results.Ok(new { coverageWithoutEmployees = result, suggestedReplacements = candidates });
 })
+.RequireAuthorization("CoverageManage")
 .RequireRateLimiting("coverage")
 .WithTags("coverage");
 
@@ -121,6 +143,7 @@ app.MapGet("/api/shifts/{shiftId:int}/coverage/history", async (int shiftId, App
         .ToListAsync();
     return Results.Ok(audits);
 })
+.RequireAuthorization("CoverageRead")
 .RequireRateLimiting("coverage")
 .WithTags("coverage");
 
