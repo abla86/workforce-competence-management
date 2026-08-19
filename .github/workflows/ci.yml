@@ -1,8 +1,8 @@
-﻿name: Full Stack CI
+name: Full Stack CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "feature/vaktklar-production" ]
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
@@ -56,6 +56,5 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - name: Build Docker Compose stack
         run: docker compose build
