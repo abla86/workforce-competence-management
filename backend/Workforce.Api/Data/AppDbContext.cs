@@ -12,6 +12,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<Shift> Shifts => Set<Shift>();
     public DbSet<ShiftAssignment> ShiftAssignments => Set<ShiftAssignment>();
     public DbSet<ShiftRequirement> ShiftRequirements => Set<ShiftRequirement>();
+    public DbSet<CoverageAuditEntry> CoverageAuditEntries => Set<CoverageAuditEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -24,5 +25,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         modelBuilder.Entity<EmployeeAvailability>().HasKey(x => new { x.EmployeeId, x.Date });
 
         modelBuilder.Entity<Competence>().HasIndex(x => x.Name).IsUnique();
+        modelBuilder.Entity<CoverageAuditEntry>().HasIndex(x => new { x.ShiftId, x.EvaluatedAt });
+        modelBuilder.Entity<CoverageAuditEntry>().Property(x => x.Status).HasMaxLength(20).IsRequired();
+        modelBuilder.Entity<CoverageAuditEntry>().Property(x => x.TriggeredBy).HasMaxLength(200);
+        modelBuilder.Entity<CoverageAuditEntry>().Property(x => x.DetailsJson).IsRequired();
     }
 }
