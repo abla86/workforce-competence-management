@@ -22,7 +22,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     {
         base.OnModelCreating(modelBuilder);
         modelBuilder.Entity<Employee>().Property(x => x.PositionPercent).HasPrecision(5, 2);
-        modelBuilder.Entity<Employee>().HasIndex(x => x.IdentitySubject).IsUnique();
+        modelBuilder.Entity<Employee>().HasIndex(x => x.IdentitySubject).IsUnique().HasFilter("[IdentitySubject] IS NOT NULL");
         modelBuilder.Entity<Shift>().Property(x => x.Hours).HasPrecision(4, 2);
         modelBuilder.Entity<EmployeeCompetence>().HasKey(x => new { x.EmployeeId, x.CompetenceId });
         modelBuilder.Entity<ShiftAssignment>().HasKey(x => new { x.ShiftId, x.EmployeeId });
