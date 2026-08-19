@@ -32,7 +32,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         modelBuilder.Entity<ShiftTask>().HasOne(x => x.Shift).WithMany(x => x.ShiftTasks).HasForeignKey(x => x.ShiftId).OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<ShiftTask>().HasOne(x => x.WorkTask).WithMany(x => x.ShiftTasks).HasForeignKey(x => x.WorkTaskId).OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<ShiftTaskCoverage>().HasOne(x => x.ShiftTask).WithMany(x => x.ShiftTaskCoverages).HasForeignKey(x => x.ShiftTaskId).OnDelete(DeleteBehavior.Cascade);
-        modelBuilder.Entity<ShiftTaskCoverage>().HasOne(x => x.Employee).WithMany().HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Restrict);
+        modelBuilder.Entity<ShiftTaskCoverage>().HasOne(x => x.Employee).WithMany(x => x.ShiftTaskCoverages).HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<CoverageAuditEntry>().HasOne(x => x.Shift).WithMany(x => x.CoverageAudits).HasForeignKey(x => x.ShiftId).OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<CoverageAuditEntry>().HasIndex(x => new { x.ShiftId, x.EvaluatedAt });
