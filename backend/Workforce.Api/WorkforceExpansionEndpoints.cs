@@ -46,10 +46,23 @@ public static class WorkforceExpansionEndpoints
 
         app.MapGet("/api/availability/team/{departmentId:int}", async (int departmentId, DateTime? date, AppDbContext db) =>
         {
+            var requestedDate = date?.Date ?? DateTime.Today;
             var service = new EmployeeAvailabilityService(db, new NotificationService(db));
-            var statuses = await service.GetTeamStatusAsync(departmentId, date ?? DateTime.Today);
-            return Results.Ok(new { date = (date ?? DateTime.Today).ToString("yyyy-MM-dd"), total = statuses.Count, available = statuses.Count(s => s.Status == EmployeeAvailabilityStatus.Available), busy = statuses.Count(s => s.Status == EmployeeAvailabilityStatus.Busy), absent = statuses.Count(s => s.Status is EmployeeAvailabilityStatus.Sick or EmployeeAvailabilityStatus.OnVacation or EmployeeAvailabilityStatus.Away), byStatus = statuses.GroupBy(s => s.Status).ToDictionary(g => g.Key.ToString(), g => g.ToList()) });
-        }).RequireAuthorization("CoverageRead").WithTags("Tilgjengelighet");
+            var statuses = await service.GetTeamStatusAsync(departmentId, requestedDate);
+            return Results.Ok(new { date = requestedDate.ToString("yyyy-MM-dd"), total = statuses.Count, available = statuses.Count(s => s.Status == EmployeeAvailabilityStatus.Available), busy = statuses.Count(s => s.Status == EmployeeAvailabilityStatus.Busy), absent = statuses.Count(s => s.Status is EmployeeAvailabilityStatus.Sick or EmployeeAvailabilityStatus.OnVacation or EmployeeAvailabilityStatus.Away), byStatus = statuses.GroupBy(s => s.Status).ToDictionary(g => g.Key.ToString(), g => g.ToList()) });
+        }).RequireAuthorization("CoverageRead").WithName("GetTeamAvailability").WithTags("Tilgjengelighet");
+
+        app.MapPut("/api/availability/me/status", async (EmployeeStatusRequest request, ClaimsPrincipal user, AppDbContext db) =>
+        {
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? user.FindFirstValue("sub");
+            if (!int.TryParse(userId, out var employeeId)) return Results.Unauthorized();
+            if (request.EndTime.HasValue && request.EndTime.Value <= DateTime.UtcNow) return Results.BadRequest(new { message = "EndTime must be in the future." });
+            var employee = await db.Employees.FindAsync(employeeId);
+            if (employee is null) return Results.NotFound(new { message = $"Employee {employeeId} not found." });
+            var service = new EmployeeAvailabilityService(db, new NotificationService(db));
+            await service.SetEmployeeStatusAsync(employeeId, request.Status, request.StatusText, request.EndTime, userId!);
+            return Results.Ok(new { employeeId, status = request.Status, statusText = request.StatusText, endTime = request.EndTime });
+        }).RequireAuthorization().WithName("UpdateMyStatus").WithTags("Tilgjengelighet");
 
         app.MapGet("/api/employees/{id:int}/status", async (int id, DateTime? date, AppDbContext db, EmployeeAccessService access, HttpContext http) =>
         {
@@ -67,20 +80,28 @@ public static class WorkforceExpansionEndpoints
 
         app.MapGet("/api/who-is-working/today/{departmentId:int}", async (int departmentId, DateTime? date, AppDbContext db) =>
         {
-            var target = date ?? DateTime.Today;
+            var target = date?.Date ?? DateTime.Today;
             var employees = await new ShiftPlanService(db, new NotificationService(db)).GetWhoIsWorkingTodayAsync(departmentId, target);
-            return Results.Ok(employees.Select(e => new { id = e.Id, name = e.Name, role = e.Role, shifts = e.ShiftAssignments.Where(a => a.Shift.StartTime.Date == target.Date).Select(a => new { a.ShiftId, a.Shift.StartTime, a.Shift.EndTime, a.Shift.ShiftType }) }));
-        }).RequireAuthorization("CoverageRead");
+            var availability = new EmployeeAvailabilityService(db, new NotificationService(db));
+            var result = new List<object>();
+            foreach (var employee in employees)
+            {
+                var status = await availability.GetEmployeeStatusAsync(employee.Id, target);
+                var shifts = employee.ShiftAssignments.Where(a => a.Shift.StartTime.Date == target.Date).OrderBy(a => a.Shift.StartTime).Select(a => new { a.ShiftId, a.Shift.StartTime, a.Shift.EndTime, a.Shift.ShiftType }).ToList();
+                result.Add(new { id = employee.Id, name = employee.Name, role = employee.Role, status = status.Status, statusText = status.StatusText, shifts });
+            }
+            return Results.Ok(result);
+        }).RequireAuthorization("CoverageRead").WithName("GetWhoIsWorkingToday").WithTags("Tilgjengelighet");
 
-        app.MapGet("/api/dailyplans/today/{departmentId:int}", async (int departmentId, AppDbContext db) =>
+        app.MapGet("/api/dailyplans/today/{departmentId:int}", async (int departmentId, ClaimsPrincipal user, AppDbContext db) =>
         {
             var service = new DailyPlanService(db, new NotificationService(db));
-            return Results.Ok(await service.GetTodayPlanAsync(departmentId) ?? await service.CreateDailyPlanAsync(departmentId, "system"));
-        }).RequireAuthorization("CoverageRead");
+            return Results.Ok(await service.GetTodayPlanAsync(departmentId) ?? await service.CreateDailyPlanAsync(departmentId, user.FindFirstValue(ClaimTypes.NameIdentifier) ?? "system"));
+        }).RequireAuthorization("CoverageRead").WithName("GetTodayDailyPlan").WithTags("Dagsplan");
         app.MapGet("/api/dailyplans/history/{departmentId:int}", async (int departmentId, int? days, AppDbContext db) => Results.Ok(await new DailyPlanService(db, new NotificationService(db)).GetRecentDailyPlansAsync(departmentId, Math.Clamp(days ?? 7, 1, 90)))).RequireAuthorization("CoverageRead");
         app.MapPost("/api/dailyplans/today/publish/{departmentId:int}", async (int departmentId, ClaimsPrincipal user, AppDbContext db) =>
         {
-            var service = new DailyPlanService(db, new NotificationService(db)); var userId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? "unknown";
+            var service = new DailyPlanService(db, new NotificationService(db)); var userId = user.FindFirstValue(ClaimTypes.NameIdentifier); if (string.IsNullOrWhiteSpace(userId)) return Results.Unauthorized();
             var plan = await service.GetTodayPlanAsync(departmentId) ?? await service.CreateDailyPlanAsync(departmentId, userId); await service.PublishDailyPlanAsync(plan.Id, userId); return Results.Ok(new { planId = plan.Id });
         }).RequireAuthorization("CoverageManage");
         app.MapPost("/api/dailyplans/{planId:int}/tasks", async (int planId, DailyTaskRequest request, AppDbContext db, ClaimsPrincipal user) =>
@@ -89,28 +110,17 @@ public static class WorkforceExpansionEndpoints
             return Results.Ok(await db.DailyPlans.Include(p => p.Tasks).FirstAsync(p => p.Id == planId));
         }).RequireAuthorization("CoverageManage");
 
-        app.MapGet("/api/shiftplans/current/{departmentId:int}", async (int departmentId, AppDbContext db) => Results.Ok(await new ShiftPlanService(db, new NotificationService(db)).GetCurrentPublishedShiftPlanAsync(departmentId))).RequireAuthorization("CoverageRead");
-        app.MapGet("/api/shiftplans/history/{departmentId:int}", async (int departmentId, int? count, AppDbContext db) => Results.Ok(await new ShiftPlanService(db, new NotificationService(db)).GetShiftPlanHistoryAsync(departmentId, Math.Clamp(count ?? 5, 1, 50)))).RequireAuthorization("CoverageRead");
+        app.MapGet("/api/shiftplans/current/{departmentId:int}", async (int departmentId, AppDbContext db) => Results.Ok(await new ShiftPlanService(db, new NotificationService(db)).GetCurrentPublishedShiftPlanAsync(departmentId))).RequireAuthorization("CoverageRead").WithName("GetCurrentShiftPlan").WithTags("Skiftplan");
+        app.MapGet("/api/shiftplans/history/{departmentId:int}", async (int departmentId, int? count, AppDbContext db) => Results.Ok(await new ShiftPlanService(db, new NotificationService(db)).GetShiftPlanHistoryAsync(departmentId, Math.Clamp(count ?? 5, 1, 50)))).RequireAuthorization("CoverageRead").WithName("GetShiftPlanHistory").WithTags("Skiftplan");
         app.MapPost("/api/shiftplans", async (CreateShiftPlanRequest request, ClaimsPrincipal user, AppDbContext db) => Results.Ok(await new ShiftPlanService(db, new NotificationService(db)).CreateShiftPlanAsync(request.DepartmentId, request.StartDate, request.EndDate, user.FindFirstValue(ClaimTypes.NameIdentifier) ?? "unknown"))).RequireAuthorization("CoverageManage");
         app.MapPost("/api/shiftplans/{planId:int}/publish", async (int planId, ClaimsPrincipal user, AppDbContext db) => Results.Ok(await new ShiftPlanService(db, new NotificationService(db)).PublishShiftPlanAsync(planId, user.FindFirstValue(ClaimTypes.NameIdentifier) ?? "unknown"))).RequireAuthorization("CoverageManage");
 
-        app.MapPost("/api/shifts/{id:int}/auto-staff", async (int id, AutoStaffingRequest request, AppDbContext db) =>
-        {
-            if (id != request.ShiftId) return Results.BadRequest(new { message = "Path shift id and request shift id must match." }); return Results.Ok(await new AutoStaffingService(db).GenerateAsync(request));
-        }).RequireAuthorization("CoverageManage");
+        app.MapPost("/api/shifts/{id:int}/auto-staff", async (int id, AutoStaffingRequest request, AppDbContext db) => { if (id != request.ShiftId) return Results.BadRequest(new { message = "Path shift id and request shift id must match." }); return Results.Ok(await new AutoStaffingService(db).GenerateAsync(request)); }).RequireAuthorization("CoverageManage");
         app.MapGet("/api/shifts/{id:int}/viability", async (int id, int employeeId, DateTime start, DateTime end, AppDbContext db) => Results.Ok(await new ShiftViabilityService(db).CheckAsync(employeeId, start, end))).RequireAuthorization("CoverageManage");
         app.MapGet("/api/shifts/{id:int}/candidates", async (int id, AppDbContext db) => { if (!await db.Shifts.AnyAsync(x => x.Id == id)) return Results.NotFound(); return Results.Ok(await new ShiftMatchingService(db).FindCandidatesAsync(id)); }).RequireAuthorization("CoverageManage");
 
-        app.MapGet("/api/notifications", async (ClaimsPrincipal user, AppDbContext db) =>
-        {
-            var subject = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? user.FindFirstValue("sub"); if (string.IsNullOrWhiteSpace(subject)) return Results.Unauthorized();
-            var employee = await db.Employees.FirstOrDefaultAsync(e => e.IdentitySubject == subject); if (employee is null) return Results.Ok(Array.Empty<object>());
-            return Results.Ok(await db.Notifications.Where(n => n.EmployeeId == employee.Id).OrderByDescending(n => n.CreatedAt).Take(100).ToListAsync());
-        }).RequireAuthorization("CoverageRead");
-        app.MapPut("/api/notifications/{id:int}/read", async (int id, ClaimsPrincipal user, AppDbContext db) =>
-        {
-            var subject = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? user.FindFirstValue("sub"); var employee = await db.Employees.FirstOrDefaultAsync(e => e.IdentitySubject == subject); var item = employee is null ? null : await db.Notifications.FirstOrDefaultAsync(n => n.Id == id && n.EmployeeId == employee.Id); if (item is null) return Results.NotFound(); item.IsRead = true; await db.SaveChangesAsync(); return Results.NoContent();
-        }).RequireAuthorization("CoverageRead");
+        app.MapGet("/api/notifications", async (ClaimsPrincipal user, AppDbContext db) => { var subject = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? user.FindFirstValue("sub"); if (string.IsNullOrWhiteSpace(subject)) return Results.Unauthorized(); var employee = await db.Employees.FirstOrDefaultAsync(e => e.IdentitySubject == subject); if (employee is null) return Results.Ok(Array.Empty<object>()); return Results.Ok(await db.Notifications.Where(n => n.EmployeeId == employee.Id).OrderByDescending(n => n.CreatedAt).Take(100).ToListAsync()); }).RequireAuthorization("CoverageRead");
+        app.MapPut("/api/notifications/{id:int}/read", async (int id, ClaimsPrincipal user, AppDbContext db) => { var subject = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? user.FindFirstValue("sub"); var employee = await db.Employees.FirstOrDefaultAsync(e => e.IdentitySubject == subject); var item = employee is null ? null : await db.Notifications.FirstOrDefaultAsync(n => n.Id == id && n.EmployeeId == employee.Id); if (item is null) return Results.NotFound(); item.IsRead = true; await db.SaveChangesAsync(); return Results.NoContent(); }).RequireAuthorization("CoverageRead");
 
         app.MapGet("/api/absences/{employeeId:int}", async (int employeeId, AppDbContext db, EmployeeAccessService access, HttpContext http) => { if (!await access.CanAccessEmployeeAsync(http.User, employeeId)) return Results.Forbid(); return Results.Ok(await db.Absences.Where(a => a.EmployeeId == employeeId).OrderByDescending(a => a.StartDate).ToListAsync()); }).RequireAuthorization("CoverageRead");
         app.MapPost("/api/absences", async (AbsenceRequest request, AppDbContext db) => { if (request.EndDate <= request.StartDate) return Results.BadRequest(new { message = "EndDate must be after StartDate." }); var item = new Absence { EmployeeId = request.EmployeeId, Type = request.Type, StartDate = request.StartDate, EndDate = request.EndDate, Description = request.Description }; db.Absences.Add(item); await db.SaveChangesAsync(); return Results.Created($"/api/absences/{item.Id}", item); }).RequireAuthorization("CoverageManage");
