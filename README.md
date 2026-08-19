@@ -1,83 +1,147 @@
-# Vaktklar – Workforce & Competence Management
+# Workforce & Competence Management
 
-Full-stack bemannings- og kompetanseløsning for ledere, skiftplanleggere og kompetanseansvarlige.
+Full-stack workforce planning and competence-management prototype. The application combines employees, competence requirements, shifts, staffing coverage, candidate ranking and what-if analysis in one system.
 
-Målet er at systemet skal **redusere planleggingsarbeid**, ikke skape mer. Det kombinerer bemanning, kompetanse, fravær, dekningsanalyse og kandidatforslag i samme arbeidsflyt.
+## Current capabilities
 
-## Hva systemet gjør
-
-- Ansatt- og kompetanseoversikt
-- Kompetansenivå og gyldighetsdato
-- Automatisk varsling om utløpt/nær utløpt kompetanse
-- Vaktplanlegging
-- Minimumsbemanning per vakt
-- Kompetansekrav per vakt
-- Kritiske kompetansekrav
-- Automatisk GREEN / YELLOW / RED-vurdering
-- Forklaring på hvorfor en vakt ikke er dekket
-- Kandidatforslag for manglende bemanning
-- Hard-validering av kompetanse før tildeling
-- Fraværsregistrering
-- «Hva hvis denne ansatte blir borte?»-scenario
-- Dashboard med handlingsprioritering
-- Audit-logg
-- Rollebasert tilgang
-- HTTP-only autentiseringscookie
-- Rate limiting på innlogging
-- PWA/app-shell for mobil bruk
-- Docker Compose
+- Employee CRUD and activation/deactivation
+- Competence catalogue and employee competence records
+- Competence levels: Basic, Intermediate, Advanced
+- Competence validity / expiry checks
+- Shift creation and management
+- Minimum staffing requirements
+- Competence requirements per shift
+- Required-role checks
+- Automatic coverage calculation
+- GREEN / YELLOW / RED operational status
+- Human-readable gap explanations
+- Candidate ranking for safe shift assignment
+- Availability checks including approved absence, overlapping shifts and rest-period warnings
+- What-if scenario analysis when an assigned employee is removed
+- Suggested replacement candidates
+- Coverage evaluation history through the existing audit-event store
+- Authentication with HTTP-only cookie JWT
+- Role-based authorization for write operations
+- Login/bootstrap rate limiting
+- Audit events for important mutations and coverage evaluations
+- Responsive React frontend
+- Docker Compose development stack
 - GitHub Actions CI
+- CodeQL and Dependabot configuration
 
-## Teknologi
+## Coverage engine
 
-### Frontend
+The coverage engine evaluates a concrete shift against its staffing and competence requirements.
 
-- React 19
-- Vite 7
-- JavaScript
-- Responsiv CSS
-- PWA manifest/service worker
+### Decision model
 
-### Backend
+- **GREEN** — staffing and all competence requirements are covered and no blocking availability issue is detected.
+- **YELLOW** — the shift has a non-critical competence gap or warning that requires review.
+- **RED** — minimum staffing is not met or a critical competence requirement is missing.
 
-- C#
-- .NET 9
-- ASP.NET Core
-- Minimal APIs
-- Entity Framework Core
-- SQL Server
-- JWT-baserte autentiseringscookies
-- BCrypt-passordhashing
+The UI also displays the underlying reason instead of relying on colour alone.
 
-### Engineering
+### Checks
 
-- xUnit
-- Docker / Docker Compose
-- GitHub Actions
-- Dependabot
-- CodeQL
-- Git
-- GitHub
+1. Minimum staffing
+2. Required competence
+3. Minimum competence level
+4. Competence validity at the shift date
+5. Required role
+6. Approved absence
+7. Double booking
+8. Rest-period warning
+9. Candidate ranking for replacement planning
 
-## Sikkerhet
+## What-if analysis
 
-API-et krever autentisering for applikasjonsdata. Skriveoperasjoner krever Admin, Manager eller HR-rolle. Innlogging er ratebegrenset, og kontoer låses midlertidig etter gjentatte feilforsøk.
+`POST /api/shifts/{id}/coverage/scenario` accepts employee IDs to remove temporarily. The database assignments are not changed by the simulation. The API returns:
 
-Produksjonsdeploy skal bruke eksterne secrets for databasepassord, JWT-nøkkel og bootstrap-nøkkel. Se `README-SECURITY.md`.
+- coverage after the simulated removal
+- staffing and competence gaps
+- warnings
+- eligible replacement candidates
 
-## Viktig om produksjonsstatus
+This is intended as a decision-support feature, not an automatic scheduling decision.
 
-Repoet er betydelig utvidet, men dette skal **ikke** beskrives som ferdig produksjonssystem for ekte ansattdata ennå. Før produksjon må blant annet OIDC/etablert identitetsleverandør, MFA, full CSRF-vurdering, sentral audit-identitet, secret rotation, ekstern logging/monitorering, ordentlige EF Core-migrasjoner, backup/restore-testing og formell GDPR-/sikkerhetsgjennomgang ferdigstilles.
+## API endpoints
 
-## Kjør lokalt
+### Coverage
 
-Kopier `.env.example` til `.env` og sett egne verdier for:
+- `GET /api/shifts/{id}/coverage`
+- `POST /api/shifts/{id}/coverage/scenario`
+- `GET /api/shifts/{id}/coverage/history`
+- `GET /api/shifts/{id}/candidates`
+
+### Core planning
+
+- `GET /api/employees`
+- `GET /api/competences`
+- `GET /api/shifts`
+- `POST /api/shifts`
+- `POST /api/shifts/{id}/assignments`
+- `POST /api/shifts/{id}/requirements`
+- `POST /api/scenarios/absence`
+
+## Architecture
+
+```text
+React + Vite
+    |
+    v
+ASP.NET Core Minimal API
+    |
+    +-- CoverageService
+    +-- PlanningAdvisor
+    +-- Authentication / RBAC
+    +-- Audit events
+    |
+    v
+Entity Framework Core
+    |
+    v
+SQL Server
+```
+
+The current implementation deliberately keeps the existing `ShiftAssignment` + `ShiftRequirement` model as the source of truth. A separate `ShiftTask` / `ShiftTaskCoverage` model is **not** included in the production branch because introducing a second scheduling model would create two competing sources of truth.
+
+## Security
+
+- JWT authentication stored in an HTTP-only cookie
+- Role checks for mutating planning data
+- Login/bootstrap rate limiting
+- Account lockout after repeated failed login attempts
+- CORS configuration
+- Audit events
+- CodeQL workflow
+- Dependabot configuration
+
+Production deployment still requires HTTPS, secure cookie configuration, real secrets, database backup/recovery controls and an appropriate privacy/security assessment before handling real employee data.
+
+## Testing
+
+Backend tests cover the coverage decision rules, including:
+
+- full coverage → GREEN
+- staffing shortage → RED
+- non-critical competence gap → YELLOW
+- critical competence gap → RED
+- expired competence
+- required-role mismatch
+
+GitHub Actions verifies backend restore/build/test, frontend lint/build and Docker Compose configuration/build.
+
+The repository should not be described as production-ready until the CI run is green and the application has been exercised end-to-end against a real SQL Server instance.
+
+## Run locally
+
+Create `.env` from `.env.example` and provide local development values for:
 
 - `DB_PASSWORD`
 - `JWT_SECRET_KEY`
 - `VAKTKLAR_BOOTSTRAP_KEY`
 
-Deretter:
+Then:
 
 ```bash
 docker compose up --build
@@ -89,24 +153,34 @@ API: `http://localhost:5080`
 
 Health: `http://localhost:5080/health`
 
-Første administrator opprettes én gang via `/api/auth/bootstrap` med bootstrap-nøkkelen. Se `README-SECURITY.md`.
+For local backend development:
 
-## Tester og CI
+```bash
+cd backend/Workforce.Api
+dotnet restore
+dotnet run
+```
 
-GitHub Actions bygger og tester backend, lint/build-er frontend og bygger Docker Compose-stacken. CI-status må alltid verifiseres mot den konkrete workflow-kjøringen; README-et påstår ikke at en lokal kjøring er utført når den ikke er dokumentert.
+Tests:
 
-## Demo-data
+```bash
+dotnet test backend/Workforce.Api.Tests/Workforce.Api.Tests.csproj --configuration Release
+```
 
-All eksisterende ansatt-, kompetanse- og vaktdata er fiktive demonstrasjonsdata. Det skal ikke legges inn reelle personopplysninger i dette offentlige repoet.
+## Data safety
 
-## Formål
+All repository demo data should be fictional. Do not place real employee, patient or other sensitive personal information in the repository.
 
-Prosjektet er utviklet som en reell full-stack demonstrator rundt et konkret bemannings- og kompetanseproblem, med vekt på forklarbare regler, brukervennlighet, automatisering og sikkerhet.
+## Project purpose
 
-## Forfatter
+The project demonstrates full-stack development through a practical workforce-management problem: turning staffing and competence rules into explainable operational decision support.
+
+## Author
 
 Anne Beth Andersen
 
-## Portefølje
+## Portfolio
 
-Prosjektet er et sentralt full-stack-prosjekt i utviklerporteføljen.
+This project is the featured full-stack project in the developer portfolio.
+
+Portfolio: https://abla86.github.io/developer-portfolio/
