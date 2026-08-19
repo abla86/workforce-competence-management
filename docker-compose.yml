@@ -16,6 +16,7 @@ services:
     build:
       context: ./backend/Workforce.Api
     environment:
+      ASPNETCORE_ENVIRONMENT: "Development"
       ASPNETCORE_URLS: "http://+:8080"
       ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=WorkforceCompetenceDb;User Id=sa;Password=StrongPassword!123;TrustServerCertificate=True"
     ports:
