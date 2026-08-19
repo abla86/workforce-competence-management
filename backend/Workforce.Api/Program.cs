@@ -1,4 +1,5 @@
 using System.Threading.RateLimiting;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
@@ -15,19 +16,28 @@ builder.Services.AddScoped<AuditProtectionService>();
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-var authority = builder.Configuration["Authentication:Authority"];
-var audience = builder.Configuration["Authentication:Audience"];
+if (builder.Environment.IsDevelopment())
+{
+    builder.Services.AddAuthentication(DevelopmentAuthenticationHandler.Scheme)
+        .AddScheme<AuthenticationSchemeOptions, DevelopmentAuthenticationHandler>(
+            DevelopmentAuthenticationHandler.Scheme, _ => { });
+}
+else
+{
+    var authority = builder.Configuration["Authentication:Authority"];
+    var audience = builder.Configuration["Authentication:Audience"];
 
-if (string.IsNullOrWhiteSpace(authority) || string.IsNullOrWhiteSpace(audience))
-    throw new InvalidOperationException("Authentication:Authority and Authentication:Audience must be configured before starting the API.");
+    if (string.IsNullOrWhiteSpace(authority) || string.IsNullOrWhiteSpace(audience))
+        throw new InvalidOperationException("Authentication:Authority and Authentication:Audience must be configured in non-development environments.");
 
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
-    {
-        options.Authority = authority;
-        options.Audience = audience;
-        options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
-    });
+    builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+        .AddJwtBearer(options =>
+        {
+            options.Authority = authority;
+            options.Audience = audience;
+            options.RequireHttpsMetadata = true;
+        });
+}
 
 builder.Services.AddAuthorizationBuilder()
     .AddPolicy("CoverageRead", policy => policy
@@ -79,7 +89,7 @@ app.MapGet("/api/shifts/{shiftId:int}/coverage", async (
     {
         var result = await coverage.EvaluateAsync(
             shiftId,
-            http.User.FindFirst("sub")?.Value ?? http.User.Identity?.Name ?? "unknown",
+            http.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "unknown",
             http);
         logger.LogInformation("Coverage evaluated for shift {ShiftId}: {Status}", shiftId, result.Status);
         return Results.Ok(result);
@@ -134,11 +144,7 @@ app.MapPost("/api/shifts/{shiftId:int}/coverage/scenario", async (
         .Select(e => new { e.Id, e.Name, e.Role })
         .ToListAsync();
 
-    return Results.Ok(new
-    {
-        coverageWithoutEmployees = result,
-        suggestedReplacements = candidates
-    });
+    return Results.Ok(new { coverageWithoutEmployees = result, suggestedReplacements = candidates });
 })
 .RequireAuthorization("CoverageManage")
 .RequireRateLimiting("coverage")
@@ -150,18 +156,8 @@ app.MapGet("/api/shifts/{shiftId:int}/coverage/history", async (int shiftId, App
         .Where(a => a.ShiftId == shiftId)
         .OrderByDescending(a => a.EvaluatedAt)
         .Take(20)
-        .Select(a => new
-        {
-            a.Id,
-            a.ShiftId,
-            a.EvaluatedAt,
-            a.Status,
-            a.AnonymizedSummary,
-            a.TriggeredBy,
-            a.ClientIp
-        })
+        .Select(a => new { a.Id, a.ShiftId, a.EvaluatedAt, a.Status, a.AnonymizedSummary, a.TriggeredBy, a.ClientIp })
         .ToListAsync();
-
     return Results.Ok(audits);
 })
 .RequireAuthorization("CoverageRead")
