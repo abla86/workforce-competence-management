@@ -1,16 +1,17 @@
-namespace Vaktklar.Domain.Models.Coverage;
+namespace Workforce.Api.Models;
 
-public class ReplacementRequest
+public sealed class ReplacementRequest
 {
     public int ShiftTaskCoverageId { get; set; }
     public int EmployeeId { get; set; }
 }
 
-public class SuggestedReplacement
+public sealed class SuggestedReplacement
 {
     public int EmployeeId { get; set; }
     public string EmployeeName { get; set; } = "";
+    public string Role { get; set; } = "";
     public int CompetenceLevel { get; set; }
-    public int AvailableSlots { get; set; }
-    public List<string> MissingRequirements { get; set; } = new();
+    public bool Available { get; set; }
+    public List<string> MissingRequirements { get; set; } = [];
 }
