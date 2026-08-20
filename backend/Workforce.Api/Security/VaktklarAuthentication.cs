@@ -163,7 +163,7 @@ internal sealed class RoleGuardStartupFilter : IStartupFilter
         {
             var rows = await db.EmployeeCompetences.AsNoTracking().Include(x => x.Employee).Include(x => x.Competence).OrderBy(x => x.Employee.Name).ThenBy(x => x.Competence.Name).ToListAsync();
             var sb = new StringBuilder("EmployeeName,CompetenceName,Level,ValidUntil\n");
-            foreach (var x in rows) sb.AppendLine(string.Join(',', Csv(x.Employee.Name), Csv(x.Competence.Name), x.Level.ToString(CultureInfo.InvariantCulture), x.ValidUntil?.ToString("yyyy-MM-dd") ?? ""));
+            foreach (var x in rows) sb.AppendLine(string.Join(',', Csv(x.Employee.Name), Csv(x.Competence.Name), Csv(x.Level), x.ValidUntil?.ToString("yyyy-MM-dd") ?? ""));
             await FileResponse(context, sb.ToString(), "text/csv; charset=utf-8", "vaktklar-kompetanse.csv");
             return true;
         }
@@ -212,15 +212,21 @@ internal sealed class RoleGuardStartupFilter : IStartupFilter
         return true;
     }
 
+    private static Task WriteBadRequestAsync(HttpContext context, object payload)
+    {
+        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+        return context.Response.WriteAsJsonAsync(payload);
+    }
+
     private static async Task ImportEmployeesAsync(HttpContext context, AppDbContext db)
     {
-        if (!context.Request.HasFormContentType) { await context.Response.WriteAsJsonAsync(new { message = "Send CSV as multipart/form-data with field 'file'." }, statusCode: 400); return; }
+        if (!context.Request.HasFormContentType) { await WriteBadRequestAsync(context, new { message = "Send CSV as multipart/form-data with field 'file'." }); return; }
         var form = await context.Request.ReadFormAsync(); var file = form.Files.GetFile("file");
-        if (file is null || file.Length == 0 || file.Length > 5 * 1024 * 1024) { await context.Response.WriteAsJsonAsync(new { message = "CSV file is required and must be <= 5 MB." }, statusCode: 400); return; }
+        if (file is null || file.Length == 0 || file.Length > 5 * 1024 * 1024) { await WriteBadRequestAsync(context, new { message = "CSV file is required and must be <= 5 MB." }); return; }
         using var reader = new StreamReader(file.OpenReadStream(), Encoding.UTF8, true); var rows = ParseCsv(await reader.ReadToEndAsync()).ToList();
-        if (rows.Count < 2) { await context.Response.WriteAsJsonAsync(new { message = "CSV must contain a header and data." }, statusCode: 400); return; }
+        if (rows.Count < 2) { await WriteBadRequestAsync(context, new { message = "CSV must contain a header and data." }); return; }
         var headers = rows[0].Select(x => x.Trim()).ToArray(); var index = headers.Select((name, i) => (name, i)).ToDictionary(x => x.name, x => x.i, StringComparer.OrdinalIgnoreCase);
-        if (!index.ContainsKey("Name") || !index.ContainsKey("Role")) { await context.Response.WriteAsJsonAsync(new { message = "CSV must contain Name and Role columns." }, statusCode: 400); return; }
+        if (!index.ContainsKey("Name") || !index.ContainsKey("Role")) { await WriteBadRequestAsync(context, new { message = "CSV must contain Name and Role columns." }); return; }
         var created = 0; var updated = 0; var errors = new List<object>();
         for (var r = 1; r < rows.Count; r++)
         {
@@ -239,13 +245,13 @@ internal sealed class RoleGuardStartupFilter : IStartupFilter
 
     private static async Task ImportCompetencesAsync(HttpContext context, AppDbContext db)
     {
-        if (!context.Request.HasFormContentType) { await context.Response.WriteAsJsonAsync(new { message = "Send CSV as multipart/form-data with field 'file'." }, statusCode: 400); return; }
+        if (!context.Request.HasFormContentType) { await WriteBadRequestAsync(context, new { message = "Send CSV as multipart/form-data with field 'file'." }); return; }
         var form = await context.Request.ReadFormAsync(); var file = form.Files.GetFile("file");
-        if (file is null || file.Length == 0 || file.Length > 5 * 1024 * 1024) { await context.Response.WriteAsJsonAsync(new { message = "CSV file is required and must be <= 5 MB." }, statusCode: 400); return; }
+        if (file is null || file.Length == 0 || file.Length > 5 * 1024 * 1024) { await WriteBadRequestAsync(context, new { message = "CSV file is required and must be <= 5 MB." }); return; }
         using var reader = new StreamReader(file.OpenReadStream(), Encoding.UTF8, true); var rows = ParseCsv(await reader.ReadToEndAsync()).ToList();
-        if (rows.Count < 2) { await context.Response.WriteAsJsonAsync(new { message = "CSV must contain a header and data." }, statusCode: 400); return; }
+        if (rows.Count < 2) { await WriteBadRequestAsync(context, new { message = "CSV must contain a header and data." }); return; }
         var headers = rows[0].Select(x => x.Trim()).ToArray(); var index = headers.Select((name, i) => (name, i)).ToDictionary(x => x.name, x => x.i, StringComparer.OrdinalIgnoreCase);
-        if (!index.ContainsKey("EmployeeName") || !index.ContainsKey("CompetenceName")) { await context.Response.WriteAsJsonAsync(new { message = "CSV must contain EmployeeName and CompetenceName columns." }, statusCode: 400); return; }
+        if (!index.ContainsKey("EmployeeName") || !index.ContainsKey("CompetenceName")) { await WriteBadRequestAsync(context, new { message = "CSV must contain EmployeeName and CompetenceName columns." }); return; }
         var created = 0; var updated = 0; var errors = new List<object>();
         for (var r = 1; r < rows.Count; r++)
         {
@@ -254,7 +260,8 @@ internal sealed class RoleGuardStartupFilter : IStartupFilter
             var employee = await db.Employees.FirstOrDefaultAsync(e => e.Name == employeeName);
             var competence = await db.Competences.FirstOrDefaultAsync(c => c.Name == competenceName);
             if (employee is null || competence is null) { errors.Add(new { row = r + 1, message = "EmployeeName or CompetenceName not found." }); continue; }
-            var level = int.TryParse(Get("Level"), out var parsedLevel) ? parsedLevel : 1;
+            var level = Get("Level");
+            if (string.IsNullOrWhiteSpace(level)) level = "Basic";
             var validUntil = DateOnly.TryParse(Get("ValidUntil"), out var parsedDate) ? parsedDate : (DateOnly?)null;
             var item = await db.EmployeeCompetences.FindAsync(employee.Id, competence.Id);
             if (item is null) { db.EmployeeCompetences.Add(new EmployeeCompetence { EmployeeId = employee.Id, CompetenceId = competence.Id, Level = level, ValidUntil = validUntil }); created++; }
