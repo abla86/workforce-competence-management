@@ -17,10 +17,6 @@ function rowsToCsv(headers, rows) {
   return [headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
 }
 
-function isoDate(value) {
-  return value instanceof Date ? value.toISOString().slice(0, 10) : String(value || "");
-}
-
 function shiftToIcs(shift) {
   const date = shift.date || shift.Date;
   const start = shift.startTime || shift.StartTime || "08:00:00";
@@ -90,22 +86,24 @@ export default function DataExchange({ employees, competences, shifts, api, muta
     event.target.value = "";
   }
 
+  const secondary = "primary-button secondary";
+
   return (
     <section>
-      <div className="page-header"><div><h1>Data & Reports</h1><p>Export operational data for analysis, sharing, backup and calendar use.</p></div></div>
-      <div className="grid two-col">
-        <article className="panel"><h2>Exports</h2><div className="button-row">
+      <div className="page-heading"><div><div className="kicker">Operations</div><h1>Data & Reports</h1><p>Export operational data for analysis, sharing, backup and calendar use.</p></div></div>
+      <div className="management-columns">
+        <article className="panel"><div className="panel-heading"><div><h2>Exports</h2><p>Browser-side files from the current authenticated dataset.</p></div></div><div className="card-actions">
           <button className="primary-button" onClick={exportJson}>JSON backup</button>
-          <button className="secondary-button" onClick={exportEmployees}>Employees CSV</button>
-          <button className="secondary-button" onClick={exportCompetences}>Competence CSV</button>
-          <button className="secondary-button" onClick={exportShifts}>Shift plan CSV</button>
-          <button className="secondary-button" onClick={exportCalendar}>Calendar ICS</button>
-          <button className="secondary-button" onClick={exportHtml}>Share HTML</button>
-          <button className="secondary-button" onClick={() => window.print()}>Print / PDF</button>
+          <button className={secondary} onClick={exportEmployees}>Employees CSV</button>
+          <button className={secondary} onClick={exportCompetences}>Competence CSV</button>
+          <button className={secondary} onClick={exportShifts}>Shift plan CSV</button>
+          <button className={secondary} onClick={exportCalendar}>Calendar ICS</button>
+          <button className={secondary} onClick={exportHtml}>Share HTML</button>
+          <button className={secondary} onClick={() => window.print()}>Print / PDF</button>
         </div><p className="muted">PDF uses the browser print dialog so the user can choose a printer or “Save as PDF”.</p></article>
-        <article className="panel"><h2>Import</h2><p>Import a JSON backup into the current environment. Existing competence names are not duplicated. Employee records are added as new records.</p><label className="secondary-button" htmlFor="backup-import">Choose JSON backup</label><input id="backup-import" type="file" accept="application/json,.json" onChange={handleImport} hidden /></article>
+        <article className="panel"><div className="panel-heading"><div><h2>Import</h2><p>Controlled JSON import for employees and competences.</p></div></div><p>Existing competence names are not duplicated. Employee records are added as new records. Shift assignments are intentionally not imported automatically.</p><label className={secondary} htmlFor="backup-import">Choose JSON backup</label><input id="backup-import" type="file" accept="application/json,.json" onChange={handleImport} hidden /></article>
       </div>
-      <article className="panel"><h2>Current dataset</h2><div className="metrics"><div><strong>{employees.length}</strong><span>employees</span></div><div><strong>{competences.length}</strong><span>competences</span></div><div><strong>{shifts.length}</strong><span>shifts</span></div></div></article>
+      <article className="panel" style={{ marginTop: 16 }}><div className="panel-heading"><div><h2>Current dataset</h2><p>Records currently loaded from the API.</p></div></div><div className="metrics"><div className="metric-card"><strong>{employees.length}</strong><small>employees</small></div><div className="metric-card"><strong>{competences.length}</strong><small>competences</small></div><div className="metric-card"><strong>{shifts.length}</strong><small>shifts</small></div></div></article>
     </section>
   );
 }
