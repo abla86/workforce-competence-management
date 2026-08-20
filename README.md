@@ -90,6 +90,14 @@ The current backend also provides authenticated data-exchange functions for prac
 
 These functions are intended for controlled development/demo use and must be subject to the organization's information-security and privacy requirements if adapted for real employee data.
 
+## API documentation
+
+The ASP.NET Core built-in OpenAPI document is available when the API is running:
+
+- `http://localhost:5080/openapi/v1.json`
+
+This repository does not currently include a separate Swagger UI; the generated OpenAPI document can be opened directly or imported into an API client.
+
 ## API areas
 
 ### Authentication
@@ -130,6 +138,16 @@ These functions are intended for controlled development/demo use and must be sub
 - `GET /api/shifts/{id}/candidates`
 - `POST /api/scenarios/absence`
 
+### Data exchange
+
+- `GET /api/export/employees.csv`
+- `GET /api/export/competences.csv`
+- `GET /api/export/shifts.xls`
+- `GET /api/export/backup.json`
+- `GET /api/share/shiftplan`
+- `POST /api/import/employees.csv`
+- `POST /api/import/competences.csv`
+
 ### Health
 
 - `GET /health`
@@ -152,7 +170,7 @@ The shift-management view combines staffing, competence requirements, coverage s
 React + Vite frontend
         |
         v
-ASP.NET Core Minimal API
+ASP.NET Core Minimal API (.NET 10)
         |
         +-- CoverageService
         +-- PlanningAdvisor
@@ -161,7 +179,7 @@ ASP.NET Core Minimal API
         +-- Data import / export
         |
         v
-Entity Framework Core
+Entity Framework Core 10
         |
         v
 SQL Server
@@ -177,22 +195,30 @@ The existing `ShiftAssignment` + `ShiftRequirement` model remains the authoritat
 - Account lockout after repeated failed login attempts
 - CORS configuration
 - Audit events
-- CodeQL workflow
+- Frontend security response headers
+- CodeQL v4 workflow
 - Dependabot configuration
 
-Production deployment still requires HTTPS, secure cookie configuration, real secret management, database backup/recovery controls, identity-management hardening and an appropriate privacy/security assessment before real employee data is used.
+The Docker development stack uses plain HTTP and therefore sets `SECURITY_COOKIE_SECURE=false` by default. Production must terminate TLS and set `SECURITY_COOKIE_SECURE=true`; HTTPS/HSTS, secret management, database backup/recovery, identity-management hardening and an appropriate privacy/security assessment are required before real employee data is used. ASP.NET Core guidance recommends HTTPS/HSTS in production and correct forwarded-header handling behind reverse proxies. citeturn3search0turn3search1
 
 See [README-SECURITY.md](README-SECURITY.md).
 
 ## Testing and CI
 
-The backend contains an xUnit test project covering core coverage rules and planning constraints. GitHub Actions validates:
+The backend currently contains **11 xUnit tests** covering core coverage rules and planning constraints. The frontend currently has lint/build validation rather than a separate automated component-test suite.
 
-- backend restore/build/test
-- frontend npm install/lint/build
+GitHub Actions validates:
+
+- backend restore/build/test on .NET 10
+- frontend `npm ci`/lint/build
 - Docker Compose configuration and image build
+- full-stack Docker startup
+- API database health
+- frontend HTTP response
+- bootstrap/login authentication
+- authenticated dashboard and shift API smoke tests
 
-The repository should not be described as production-ready merely because the source builds. End-to-end execution against SQL Server and a green CI run are required before a production claim is justified.
+CodeQL runs C# and JavaScript/TypeScript analysis. Dependabot monitors NuGet, npm and GitHub Actions dependencies.
 
 Run backend tests locally:
 
@@ -216,6 +242,7 @@ Create `.env` from `.env.example` and provide local development values for:
 - `DB_PASSWORD`
 - `JWT_SECRET_KEY`
 - `VAKTKLAR_BOOTSTRAP_KEY`
+- `SECURITY_COOKIE_SECURE=false` for plain HTTP localhost development
 
 Then:
 
@@ -227,7 +254,31 @@ Local addresses:
 
 - Frontend: `http://localhost:8088`
 - API: `http://localhost:5080`
+- OpenAPI: `http://localhost:5080/openapi/v1.json`
 - Health: `http://localhost:5080/health`
+
+### First-time login
+
+The initial administrator is created through the one-time bootstrap endpoint using `VAKTKLAR_BOOTSTRAP_KEY`. The bootstrap endpoint refuses to create another account once an account already exists.
+
+For local development, call the endpoint with a strong username/password, then sign in through the frontend. Never reuse development bootstrap credentials in another environment.
+
+## Database lifecycle
+
+The prototype currently uses `Database.EnsureCreatedAsync()` for its self-contained demo database and does **not** yet ship an EF Core migrations history. This makes the disposable Docker demo easy to start, but it is not sufficient for controlled production schema evolution.
+
+A production version should introduce reviewed EF Core migrations, explicit migration deployment, backup/restore testing and a defined data-retention model before persistent organizational data is used.
+
+## Known prototype limitations
+
+- No production deployment is included in this repository.
+- No frontend automated component/E2E test suite is currently included.
+- No performance/load benchmark has been established.
+- No external identity provider/MFA integration is included.
+- Audit storage is database-backed but does not yet provide tamper-evident or immutable log storage.
+- Demo seed data is fictional and intended for development/testing.
+
+These limitations are intentional prototype boundaries and should not be hidden behind a claim of production readiness.
 
 ## Data safety
 
