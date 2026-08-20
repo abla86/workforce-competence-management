@@ -25,7 +25,9 @@ npm ci
 npm run dev
 ```
 
-The default development API configuration is defined in `src/services/api.js`. When using Docker Compose, the frontend is served on `http://localhost:8088` and the API on `http://localhost:5080`.
+The application uses same-origin `/api` requests by default. When using Docker Compose, the frontend is served on `http://localhost:8088` and Nginx proxies API requests to the backend on `http://localhost:5080`.
+
+For a separate local frontend/API setup, set `VITE_API_URL` to the API origin before starting Vite.
 
 ## Validate
 
@@ -33,6 +35,8 @@ The default development API configuration is defined in `src/services/api.js`. W
 npm run lint
 npm run build
 ```
+
+The repository currently uses lint/build validation rather than a separate automated component or end-to-end frontend test suite.
 
 ## Functional workflow
 
