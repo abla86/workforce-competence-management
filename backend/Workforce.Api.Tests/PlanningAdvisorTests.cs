@@ -1,61 +1,70 @@
 using Workforce.Api.Models;
 using Workforce.Api.Services;
-using Xunit;
 
 namespace Workforce.Api.Tests;
 
 public sealed class PlanningAdvisorTests
 {
     [Fact]
-    public void CandidateWithoutRequiredCompetenceIsNotEligible()
+    public void CandidateWithApprovedAbsenceIsRejected()
     {
-        var competence = new Competence { Id = 1, Name = "Medication" };
-        var shift = new Shift
-        {
-            Id = 1, Date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1)), Hours = 8, MinimumStaff = 1,
-            Requirements = [new ShiftRequirement { CompetenceId = 1, Competence = competence, MinimumCount = 1, MinimumLevel = "Advanced" }]
-        };
-        var employee = new Employee { Id = 10, Name = "Candidate", IsActive = true };
+        var employee = new Employee { Id = 10, Name = "Candidate", IsActive = true, PositionPercent = 100m,
+            Absences = [new Absence { EmployeeId = 10, From = DateOnly.FromDateTime(DateTime.UtcNow), To = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(2)), Approved = true }] };
+        var shift = new Shift { Id = 1, Date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1)), Hours = 8, MinimumStaff = 1 };
+
         var result = new PlanningAdvisor().RankCandidates(shift, [employee], [shift]).Single();
+
         Assert.False(result.Eligible);
-        Assert.Contains(result.HardFailures, x => x.Contains("Medication"));
+        Assert.Contains(result.HardFailures, x => x.Contains("Fravær"));
     }
 
     [Fact]
-    public void CandidateWithOverlapIsRejected()
+    public void CandidateWithOverlappingShiftIsRejected()
     {
-        var shift = new Shift { Id = 2, Date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1)), StartTime = new TimeOnly(15, 0), Hours = 7, MinimumStaff = 1 };
-        var existing = new Shift { Id = 1, Date = shift.Date, StartTime = new TimeOnly(8, 0), Hours = 8, MinimumStaff = 1,
-            Assignments = [new ShiftAssignment { EmployeeId = 10, Employee = new Employee { Id = 10, Name = "Candidate", IsActive = true } }] };
-        var employee = existing.Assignments[0].Employee;
-        var result = new PlanningAdvisor().RankCandidates(shift, [employee], [existing, shift]).Single();
-        Assert.False(result.Eligible);
-        Assert.Contains(result.HardFailures, x => x.Contains("overlappende"));
-    }
-
-    [Fact]
-    public void CandidateAlreadyAssignedToTargetShiftIsRejected()
-    {
-        var employee = new Employee { Id = 10, Name = "Candidate", IsActive = true };
-        var shift = new Shift
+        var employee = new Employee { Id = 10, Name = "Candidate", IsActive = true, PositionPercent = 100m };
+        var target = new Shift { Id = 2, Date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1)), StartTime = new TimeOnly(14, 0), Hours = 8, MinimumStaff = 1 };
+        var existing = new Shift
         {
-            Id = 2,
-            Date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1)),
+            Id = 1,
+            Date = target.Date,
+            StartTime = new TimeOnly(10, 0),
             Hours = 8,
             MinimumStaff = 1,
             Assignments = [new ShiftAssignment { EmployeeId = 10, Employee = employee }]
         };
 
-        var result = new PlanningAdvisor().RankCandidates(shift, [employee], [shift]).Single();
+        var result = new PlanningAdvisor().RankCandidates(target, [employee], [existing, target]).Single();
 
         Assert.False(result.Eligible);
-        Assert.Contains(result.HardFailures, x => x.Contains("denne vakten"));
+        Assert.Contains(result.HardFailures, x => x.Contains("overlappende"));
+    }
+
+    [Fact]
+    public void CandidateWithInsufficientRestIsRejected()
+    {
+        var employee = new Employee { Id = 10, Name = "Candidate", IsActive = true, PositionPercent = 100m };
+        var target = new Shift { Id = 2, Date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1)), StartTime = new TimeOnly(7, 0), Hours = 8, MinimumStaff = 1 };
+        var existing = new Shift
+        {
+            Id = 1,
+            Date = target.Date,
+            StartTime = new TimeOnly(18, 0),
+            Hours = 8,
+            MinimumStaff = 1,
+            Assignments = [new ShiftAssignment { EmployeeId = 10, Employee = employee }]
+        };
+
+        // The previous shift ends at 02:00 the next day; this candidate has only five hours before 07:00.
+        var result = new PlanningAdvisor().RankCandidates(target, [employee], [existing, target]).Single();
+
+        Assert.False(result.Eligible);
+        Assert.Contains(result.HardFailures, x => x.Contains("11-timers hvile"));
     }
 
     [Fact]
     public void CandidateExceedingWeeklyHoursIsRejected()
     {
-        var employee = new Employee { Id = 10, Name = "Candidate", IsActive = true, MaxWeeklyHours = 20m };
+        var employee = new Employee { Id = 10, Name = "Candidate", IsActive = true, PositionPercent = 100m, MaxWeeklyHours = 20m };
         var target = new Shift { Id = 2, Date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(2)), Hours = 8, MinimumStaff = 1 };
         var existing = new Shift
         {
@@ -76,7 +85,7 @@ public sealed class PlanningAdvisorTests
     public void ValidCandidateIsRankedEligible()
     {
         var competence = new Competence { Id = 1, Name = "First aid" };
-        var employee = new Employee { Id = 10, Name = "Candidate", IsActive = true,
+        var employee = new Employee { Id = 10, Name = "Candidate", IsActive = true, PositionPercent = 100m,
             Competences = [new EmployeeCompetence { CompetenceId = 1, Competence = competence, Level = "Advanced" }] };
         var shift = new Shift { Id = 1, Date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1)), Hours = 8, MinimumStaff = 1,
             Requirements = [new ShiftRequirement { CompetenceId = 1, Competence = competence, MinimumCount = 1, MinimumLevel = "Intermediate" }] };
