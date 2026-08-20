@@ -5,6 +5,7 @@ import Employees from "./pages/Employees.jsx";
 import Competence from "./pages/Competence.jsx";
 import Shifts from "./pages/Shifts.jsx";
 import GapAnalysis from "./pages/GapAnalysis.jsx";
+import DataExchange from "./pages/DataExchange.jsx";
 import Login from "./pages/Login.jsx";
 import { api } from "./services/api.js";
 
@@ -40,7 +41,7 @@ export default function App() {
 
   async function mutate(action, successMessage) {
     try { await action(); setNotice(successMessage); setError(""); await reload(); setTimeout(() => setNotice(""), 2500); }
-    catch (err) { setError(err.message || "Handlingen kunne ikke gjennomføres."); }
+    catch (err) { setError(err.message || "Handlingen kunne ikke gjennomføres."); throw err; }
   }
 
   async function logout() {
@@ -57,6 +58,7 @@ export default function App() {
   else if (page === "competence") content = <Competence employees={employees} competences={competences} api={api} mutate={mutate} />;
   else if (page === "shifts") content = <Shifts shifts={shifts} employees={employees} competences={competences} api={api} mutate={mutate} />;
   else if (page === "gaps") content = <GapAnalysis shifts={shifts} />;
+  else if (page === "data") content = <DataExchange employees={employees} competences={competences} shifts={shifts} api={api} mutate={mutate} />;
   else content = <Dashboard data={dashboard} employees={employees} />;
 
   return (
