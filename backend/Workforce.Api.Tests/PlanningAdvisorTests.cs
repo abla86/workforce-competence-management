@@ -48,7 +48,7 @@ public sealed class PlanningAdvisorTests
         var existing = new Shift
         {
             Id = 1,
-            Date = target.Date,
+            Date = target.Date.AddDays(-1),
             StartTime = new TimeOnly(18, 0),
             Hours = 8,
             MinimumStaff = 1,
