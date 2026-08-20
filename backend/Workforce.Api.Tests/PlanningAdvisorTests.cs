@@ -1,5 +1,6 @@
 using Workforce.Api.Models;
 using Workforce.Api.Services;
+using Xunit;
 
 namespace Workforce.Api.Tests;
 
@@ -54,7 +55,6 @@ public sealed class PlanningAdvisorTests
             Assignments = [new ShiftAssignment { EmployeeId = 10, Employee = employee }]
         };
 
-        // The previous shift ends at 02:00 the next day; this candidate has only five hours before 07:00.
         var result = new PlanningAdvisor().RankCandidates(target, [employee], [existing, target]).Single();
 
         Assert.False(result.Eligible);
