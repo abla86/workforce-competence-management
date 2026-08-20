@@ -62,13 +62,15 @@ This document records the major interactive upgrades to the prototype. It is not
 
 ## Verification
 
-Run backend tests:
+### Backend
 
 ```powershell
 dotnet test .\backend\Workforce.Api.Tests\Workforce.Api.Tests.csproj --configuration Release
 ```
 
-Run frontend checks:
+The current backend test suite contains 11 unit tests.
+
+### Frontend
 
 ```powershell
 cd .\frontend
@@ -77,12 +79,36 @@ npm run lint
 npm run build
 ```
 
-Run the complete development stack:
+The frontend currently uses lint/build validation rather than a separate automated component/E2E test suite.
+
+### Complete development stack
 
 ```powershell
 cd ..
 docker compose up --build
 ```
+
+The stack exposes the frontend on `http://localhost:8088`, the API on `http://localhost:5080` and OpenAPI on `http://localhost:5080/openapi/v1.json`.
+
+### CI smoke verification
+
+GitHub Actions now validates the complete Docker stack by:
+
+1. building the Compose images;
+2. starting SQL Server, API and frontend;
+3. waiting for the API database health endpoint;
+4. checking the frontend response;
+5. bootstrapping a temporary CI administrator;
+6. logging in and storing the HTTP-only authentication cookie;
+7. calling protected dashboard and shift endpoints;
+8. printing service logs on failure; and
+9. tearing the stack down with its temporary database volume.
+
+## Platform maintenance
+
+The backend has been migrated from .NET 9 to supported .NET 10, and the Microsoft ASP.NET Core/EF Core packages are aligned to the current 10.0.11 patch release used for this audit.
+
+The CodeQL workflow has been migrated from CodeQL Action v3 to v4. GitHub's current CodeQL documentation lists v4 as the latest supported major version.
 
 ## Important distinction
 
