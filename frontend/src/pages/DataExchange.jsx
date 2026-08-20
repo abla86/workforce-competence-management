@@ -4,8 +4,10 @@ function downloadBlob(content, filename, type) {
   const link = document.createElement("a");
   link.href = url;
   link.download = filename;
+  document.body.appendChild(link);
   link.click();
-  URL.revokeObjectURL(url);
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 function csvCell(value) {
@@ -14,18 +16,68 @@ function csvCell(value) {
 }
 
 function rowsToCsv(headers, rows) {
-  return [headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
+  return [headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n");
+}
+
+function htmlCell(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function icsText(value) {
+  return String(value ?? "")
+    .replaceAll("\\", "\\\\")
+    .replaceAll(";", "\\;")
+    .replaceAll(",", "\\,")
+    .replaceAll(/\r?\n/g, "\\n");
+}
+
+function icsLocalDateTime(date, start, hours) {
+  const dateText = String(date || "").slice(0, 10);
+  const startText = String(start || "08:00").slice(0, 5);
+  const [year, month, day] = dateText.split("-").map(Number);
+  const [hour, minute] = startText.split(":").map(Number);
+  if (![year, month, day, hour, minute].every(Number.isFinite)) throw new Error("Shift contains an invalid date or start time.");
+  const startDate = new Date(year, month - 1, day, hour, minute, 0, 0);
+  if (Number.isNaN(startDate.getTime())) throw new Error("Shift contains an invalid date or start time.");
+  const endDate = new Date(startDate.getTime() + Number(hours || 0) * 60 * 60 * 1000);
+  const fmt = (d) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}T${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}00`;
+  return [fmt(startDate), fmt(endDate)];
 }
 
 function shiftToIcs(shift) {
-  const date = shift.date || shift.Date;
-  const start = shift.startTime || shift.StartTime || "08:00:00";
-  const hours = Number(shift.hours || shift.Hours || 0);
-  const [h, m] = String(start).slice(0, 5).split(":").map(Number);
-  const startDate = new Date(`${date}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00`);
-  const endDate = new Date(startDate.getTime() + hours * 60 * 60 * 1000);
-  const fmt = (d) => d.toISOString().replaceAll("-", "").replaceAll(":", "").replace(/\.\d{3}Z$/, "Z");
-  return `BEGIN:VEVENT\nUID:workforce-shift-${shift.id || shift.Id}@workforce-competence\nDTSTART:${fmt(startDate)}\nDTEND:${fmt(endDate)}\nSUMMARY:${String(shift.shiftType || shift.ShiftType || "Shift").replaceAll("\n", " ")}\nDESCRIPTION:Minimum staffing ${shift.minimumStaff || shift.MinimumStaff || 0}\nEND:VEVENT`;
+  const [dtStart, dtEnd] = icsLocalDateTime(shift.date || shift.Date, shift.startTime || shift.StartTime, Number(shift.hours || shift.Hours || 0));
+  const id = shift.id || shift.Id;
+  const type = shift.shiftType || shift.ShiftType || "Shift";
+  const department = shift.department || shift.Department || "";
+  return [
+    "BEGIN:VEVENT",
+    `UID:workforce-shift-${icsText(id)}@workforce-competence`,
+    `DTSTART:${dtStart}`,
+    `DTEND:${dtEnd}`,
+    `SUMMARY:${icsText(type)}`,
+    `DESCRIPTION:${icsText(`Department: ${department}; Minimum staffing: ${shift.minimumStaff || shift.MinimumStaff || 0}`)}`,
+    "END:VEVENT",
+  ].join("\r\n");
+}
+
+function validateImport(data) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("Invalid JSON backup format.");
+  if (data.version && String(data.version) !== "1.0") throw new Error(`Unsupported backup version: ${data.version}`);
+  if (!Array.isArray(data.employees) && !Array.isArray(data.competences)) throw new Error("JSON backup must contain employees and/or competences arrays.");
+  if ((data.employees || []).length > 1000 || (data.competences || []).length > 1000) throw new Error("Import is limited to 1000 records per collection.");
+  for (const c of data.competences || []) {
+    if (!c || typeof c !== "object" || !String(c.name || "").trim()) throw new Error("Every competence must contain a name.");
+  }
+  for (const e of data.employees || []) {
+    if (!e || typeof e !== "object" || !String(e.name || "").trim() || !String(e.role || "").trim()) throw new Error("Every employee must contain a name and role.");
+    const percent = Number(e.positionPercent ?? 100);
+    if (!Number.isFinite(percent) || percent <= 0 || percent > 100) throw new Error("Employee positionPercent must be between 1 and 100.");
+  }
 }
 
 export default function DataExchange({ employees, competences, shifts, api, mutate }) {
@@ -50,30 +102,36 @@ export default function DataExchange({ employees, competences, shifts, api, muta
   }
 
   function exportCalendar() {
-    const body = shifts.map(shiftToIcs).join("\n");
-    downloadBlob(`BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Workforce Competence Management//EN\n${body}\nEND:VCALENDAR\n`, "shift-plan.ics", "text/calendar;charset=utf-8");
+    try {
+      const body = shifts.map(shiftToIcs).join("\r\n");
+      downloadBlob(`BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Workforce Competence Management//EN\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\n${body}\r\nEND:VCALENDAR\r\n`, "shift-plan.ics", "text/calendar;charset=utf-8");
+    } catch (error) {
+      mutate(async () => { throw error; }, "Calendar export failed.");
+    }
   }
 
   function exportHtml() {
-    const rows = shifts.map((s) => `<tr><td>${s.date || ""}</td><td>${s.shiftType || ""}</td><td>${s.department || ""}</td><td>${s.minimumStaff ?? ""}</td><td>${s.overallStatus || ""}</td><td>${s.competenceCoverage ?? ""}%</td></tr>`).join("");
-    const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Workforce shift plan</title><style>body{font-family:system-ui;margin:32px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:8px;text-align:left}th{background:#eee}</style></head><body><h1>Workforce shift plan</h1><p>Generated ${new Date().toLocaleString()}</p><table><thead><tr><th>Date</th><th>Shift</th><th>Department</th><th>Minimum staff</th><th>Status</th><th>Competence coverage</th></tr></thead><tbody>${rows}</tbody></table></body></html>`;
+    const rows = shifts.map((s) => `<tr><td>${htmlCell(s.date)}</td><td>${htmlCell(s.shiftType)}</td><td>${htmlCell(s.department)}</td><td>${htmlCell(s.minimumStaff)}</td><td>${htmlCell(s.overallStatus)}</td><td>${htmlCell(s.competenceCoverage)}%</td></tr>`).join("");
+    const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Workforce shift plan</title><meta name="robots" content="noindex,nofollow"><style>body{font-family:system-ui;margin:32px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:8px;text-align:left}th{background:#eee}</style></head><body><h1>Workforce shift plan</h1><p>Generated ${htmlCell(new Date().toLocaleString())}</p><table><thead><tr><th>Date</th><th>Shift</th><th>Department</th><th>Minimum staff</th><th>Status</th><th>Competence coverage</th></tr></thead><tbody>${rows}</tbody></table></body></html>`;
     downloadBlob(html, "shift-plan.html", "text/html;charset=utf-8");
   }
 
   async function importJson(file) {
+    if (file.size > 5 * 1024 * 1024) throw new Error("Import file is limited to 5 MB.");
     const text = await file.text();
     const data = JSON.parse(text);
-    if (!Array.isArray(data.employees) && !Array.isArray(data.competences)) throw new Error("JSON backup must contain employees and/or competences arrays.");
-    const competenceByName = new Map(competences.map((c) => [c.name.toLowerCase(), c]));
+    validateImport(data);
+    const competenceByName = new Map(competences.map((c) => [String(c.name).trim().toLowerCase(), c]));
     let created = 0;
     for (const c of data.competences || []) {
-      if (!c?.name || competenceByName.has(String(c.name).toLowerCase())) continue;
-      await api.createCompetence({ name: String(c.name).trim(), category: String(c.category || "General").trim() });
+      const name = String(c.name).trim();
+      if (competenceByName.has(name.toLowerCase())) continue;
+      await api.createCompetence({ name, category: String(c.category || "General").trim() });
+      competenceByName.set(name.toLowerCase(), c);
       created += 1;
     }
     for (const e of data.employees || []) {
-      if (!e?.name || !e?.role) continue;
-      await api.createEmployee({ name: String(e.name).trim(), role: String(e.role).trim(), positionPercent: Number(e.positionPercent || 100) });
+      await api.createEmployee({ name: String(e.name).trim(), role: String(e.role).trim(), positionPercent: Number(e.positionPercent ?? 100) });
       created += 1;
     }
     await mutate(async () => {}, `Import complete: ${created} records submitted.`);
@@ -82,7 +140,7 @@ export default function DataExchange({ employees, competences, shifts, api, muta
   function handleImport(event) {
     const file = event.target.files?.[0];
     if (!file) return;
-    importJson(file).catch((error) => mutate(async () => { throw error; }, "Import failed."));
+    importJson(file).catch((error) => mutate(async () => { throw error; }, error.message || "Import failed."));
     event.target.value = "";
   }
 
@@ -100,8 +158,8 @@ export default function DataExchange({ employees, competences, shifts, api, muta
           <button className={secondary} onClick={exportCalendar}>Calendar ICS</button>
           <button className={secondary} onClick={exportHtml}>Share HTML</button>
           <button className={secondary} onClick={() => window.print()}>Print / PDF</button>
-        </div><p className="muted">PDF uses the browser print dialog so the user can choose a printer or “Save as PDF”.</p></article>
-        <article className="panel"><div className="panel-heading"><div><h2>Import</h2><p>Controlled JSON import for employees and competences.</p></div></div><p>Existing competence names are not duplicated. Employee records are added as new records. Shift assignments are intentionally not imported automatically.</p><label className={secondary} htmlFor="backup-import">Choose JSON backup</label><input id="backup-import" type="file" accept="application/json,.json" onChange={handleImport} hidden /></article>
+        </div><p className="muted">Exports contain operational employee data. Treat downloaded files as confidential and store them only in approved locations.</p></article>
+        <article className="panel"><div className="panel-heading"><div><h2>Import</h2><p>Controlled JSON import for employees and competences.</p></div></div><p>Files are limited to 5 MB and 1000 records per collection. Existing competence names are not duplicated. Employee records are added as new records. Shift assignments are intentionally not imported automatically.</p><label className={secondary} htmlFor="backup-import">Choose JSON backup</label><input id="backup-import" type="file" accept="application/json,.json" onChange={handleImport} hidden /></article>
       </div>
       <article className="panel" style={{ marginTop: 16 }}><div className="panel-heading"><div><h2>Current dataset</h2><p>Records currently loaded from the API.</p></div></div><div className="metrics"><div className="metric-card"><strong>{employees.length}</strong><small>employees</small></div><div className="metric-card"><strong>{competences.length}</strong><small>competences</small></div><div className="metric-card"><strong>{shifts.length}</strong><small>shifts</small></div></div></article>
     </section>
