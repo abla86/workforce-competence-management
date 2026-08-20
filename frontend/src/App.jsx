@@ -41,7 +41,7 @@ export default function App() {
 
   async function mutate(action, successMessage) {
     try { await action(); setNotice(successMessage); setError(""); await reload(); setTimeout(() => setNotice(""), 2500); }
-    catch (err) { setError(err.message || "Handlingen kunne ikke gjennomføres."); throw err; }
+    catch (err) { setError(err.message || "Handlingen kunne ikke gjennomføres."); }
   }
 
   async function logout() {
