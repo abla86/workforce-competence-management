@@ -24,7 +24,7 @@ services:
       Jwt__Issuer: "vaktklar"
       Jwt__Audience: "vaktklar-web"
       VAKTKLAR_BOOTSTRAP_KEY: "${VAKTKLAR_BOOTSTRAP_KEY:?Set VAKTKLAR_BOOTSTRAP_KEY in .env}"
-      Security__CookieSecure: "false"
+      Security__CookieSecure: "${SECURITY_COOKIE_SECURE:-false}"
       Cors__Origins__0: "http://localhost:8088"
       Cors__Origins__1: "http://localhost:5173"
     ports:
