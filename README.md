@@ -5,6 +5,10 @@ A full-stack workforce-planning and competence-management prototype for **employ
 [![CI](https://github.com/abla86/workforce-competence-management/actions/workflows/ci.yml/badge.svg)](https://github.com/abla86/workforce-competence-management/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/abla86/workforce-competence-management/actions/workflows/codeql.yml/badge.svg)](https://github.com/abla86/workforce-competence-management/actions/workflows/codeql.yml)
 
+## Prototype status
+
+**Prototype 2 — functionally complete and runnable.** The repository is suitable for local demonstrations, controlled internal testing and portfolio presentation. It is not claimed to be production-ready until the controls in [Production Readiness](docs/PRODUCTION-READINESS.md) are completed for the target organisation.
+
 ## What the prototype does
 
 ### Shift planning
@@ -46,7 +50,7 @@ The system is decision support. It does not replace professional judgement or lo
 
 ## Data & Reports workspace
 
-The frontend now includes a dedicated **Data & Reports** view for practical exchange and reporting:
+The frontend includes a dedicated **Data & Reports** view:
 
 - JSON backup export
 - Employee CSV export
@@ -71,7 +75,7 @@ The application exposes the reasons behind the status instead of relying on colo
 
 ## API
 
-The ASP.NET Core OpenAPI document is available at:
+The ASP.NET Core OpenAPI document is available locally at:
 
 `http://localhost:5080/openapi/v1.json`
 
@@ -124,11 +128,11 @@ SQL Server
 
 The Docker demo uses HTTP localhost and therefore `SECURITY_COOKIE_SECURE=false`. Production requires TLS, secure cookies, production secret management and an appropriate identity/privacy/security review.
 
-See [README-SECURITY.md](README-SECURITY.md) and [docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md).
+See [README-SECURITY.md](README-SECURITY.md), [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and [docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md).
 
 ## Testing and CI
 
-GitHub Actions verifies:
+GitHub Actions is configured to verify:
 
 - .NET 10 restore/build/test
 - frontend `npm ci`, lint and build
@@ -172,6 +176,7 @@ Open:
 - [API Guide](docs/API.md)
 - [Data Formats](docs/DATA-FORMATS.md)
 - [Functional Test Matrix](docs/TEST-MATRIX.md)
+- [Deployment Guide](docs/DEPLOYMENT.md)
 - [Production Readiness](docs/PRODUCTION-READINESS.md)
 - [Security](README-SECURITY.md)
 - [Upgrade Guide](README-UPGRADE.md)
