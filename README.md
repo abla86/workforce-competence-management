@@ -199,7 +199,7 @@ The existing `ShiftAssignment` + `ShiftRequirement` model remains the authoritat
 - CodeQL v4 workflow
 - Dependabot configuration
 
-The Docker development stack uses plain HTTP and therefore sets `SECURITY_COOKIE_SECURE=false` by default. Production must terminate TLS and set `SECURITY_COOKIE_SECURE=true`; HTTPS/HSTS, secret management, database backup/recovery, identity-management hardening and an appropriate privacy/security assessment are required before real employee data is used. ASP.NET Core guidance recommends HTTPS/HSTS in production and correct forwarded-header handling behind reverse proxies. citeturn3search0turn3search1
+The Docker development stack uses plain HTTP and therefore sets `SECURITY_COOKIE_SECURE=false` by default. Production must terminate TLS and set `SECURITY_COOKIE_SECURE=true`; HTTPS/HSTS, secret management, database backup/recovery, identity-management hardening and an appropriate privacy/security assessment are required before real employee data is used.
 
 See [README-SECURITY.md](README-SECURITY.md).
 
