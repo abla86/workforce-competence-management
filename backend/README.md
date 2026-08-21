@@ -73,7 +73,7 @@ http://localhost:5080/openapi/v1.json
 dotnet test ../Workforce.Api.Tests/Workforce.Api.Tests.csproj --configuration Release
 ```
 
-The current test project contains **16 xUnit tests** covering coverage decisions, availability/overlap regressions and planning constraints.
+The current test project contains **18 xUnit tests**: 16 core coverage/planning tests plus 2 database-backed availability regression tests. The regression suite covers the dashboard/list availability-evaluation bug and overlap detection for shifts without explicit start times.
 
 ## Main services
 
