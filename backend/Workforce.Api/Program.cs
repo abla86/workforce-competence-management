@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Workforce.Api.Data;
 using Workforce.Api.DTOs;
@@ -8,6 +9,7 @@ using Workforce.Api.Security;
 using Workforce.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddOpenApi();
 builder.Services.AddDbContext<AppDbContext>(o => o.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 builder.Services.AddScoped<CoverageService>();
@@ -137,8 +139,17 @@ app.MapDelete("/api/competences/{id:int}", async (int id, AppDbContext db) =>
 
 app.MapGet("/api/shifts", async (AppDbContext db, CoverageService coverage) =>
 {
-    var shifts = await db.Shifts.Include(x => x.Assignments).ThenInclude(x => x.Employee).ThenInclude(x => x.Competences).Include(x => x.Requirements).ThenInclude(x => x.Competence).OrderBy(x => x.Date).ThenBy(x => x.StartTime).ToListAsync();
-    return Results.Ok(shifts.Select(coverage.AnalyzeShift));
+    var shiftIds = await db.Shifts
+        .OrderBy(x => x.Date)
+        .ThenBy(x => x.StartTime)
+        .Select(x => x.Id)
+        .ToListAsync();
+
+    var analyses = new List<ShiftCoverageResult>(shiftIds.Count);
+    foreach (var shiftId in shiftIds)
+        analyses.Add(await coverage.EvaluateShiftAsync(db, shiftId, writeAudit: false));
+
+    return Results.Ok(analyses);
 });
 
 app.MapGet("/api/shifts/{id:int}/coverage", async (int id, AppDbContext db, CoverageService coverage, HttpContext http) =>
@@ -259,11 +270,32 @@ app.MapDelete("/api/absences/{id:int}", async (int id, AppDbContext db) => { var
 app.MapGet("/api/dashboard", async (AppDbContext db, CoverageService coverage) =>
 {
     var employees = await db.Employees.Include(x => x.Competences).Include(x => x.Absences).ToListAsync();
-    var shifts = await db.Shifts.Include(x => x.Assignments).ThenInclude(x => x.Employee).ThenInclude(x => x.Competences).Include(x => x.Requirements).ThenInclude(x => x.Competence).OrderBy(x => x.Date).ToListAsync();
-    var analyses = shifts.Select(coverage.AnalyzeShift).ToList(); var today = DateOnly.FromDateTime(DateTime.UtcNow);
-    var expiring = employees.SelectMany(e => e.Competences).Count(c => c.ValidUntil.HasValue && c.ValidUntil.Value >= today && c.ValidUntil.Value <= today.AddDays(45));
-    return Results.Ok(new { TotalEmployees = employees.Count(x => x.IsActive), ActiveCompetences = await db.Competences.CountAsync(), ActionRequiredShifts = analyses.Count(x => x.OverallStatus == "RED"), WarningShifts = analyses.Count(x => x.OverallStatus == "YELLOW"), CompetencesExpiring45Days = expiring, CompetenceCoverage = analyses.Count == 0 ? 100 : (int)Math.Round(analyses.Average(x => x.CompetenceCoverage)), UpcomingShifts = analyses });
+    var shiftIds = await db.Shifts
+        .OrderBy(x => x.Date)
+        .ThenBy(x => x.StartTime)
+        .Select(x => x.Id)
+        .ToListAsync();
+
+    var analyses = new List<ShiftCoverageResult>(shiftIds.Count);
+    foreach (var shiftId in shiftIds)
+        analyses.Add(await coverage.EvaluateShiftAsync(db, shiftId, writeAudit: false));
+
+    var today = DateOnly.FromDateTime(DateTime.UtcNow);
+    var expiring = employees.SelectMany(e => e.Competences)
+        .Count(c => c.ValidUntil.HasValue && c.ValidUntil.Value >= today && c.ValidUntil.Value <= today.AddDays(45));
+
+    return Results.Ok(new
+    {
+        TotalEmployees = employees.Count(x => x.IsActive),
+        ActiveCompetences = await db.Competences.CountAsync(),
+        ActionRequiredShifts = analyses.Count(x => x.OverallStatus == "RED"),
+        WarningShifts = analyses.Count(x => x.OverallStatus == "YELLOW"),
+        CompetencesExpiring45Days = expiring,
+        CompetenceCoverage = analyses.Count == 0 ? 100 : (int)Math.Round(analyses.Average(x => x.CompetenceCoverage)),
+        UpcomingShifts = analyses
+    });
 });
+
 app.MapGet("/api/audit", async (AppDbContext db, int take = 100) => Results.Ok(await db.AuditEvents.OrderByDescending(x => x.OccurredAtUtc).Take(Math.Clamp(take, 1, 500)).ToListAsync()));
 
 app.Run();
