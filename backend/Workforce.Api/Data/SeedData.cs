@@ -7,9 +7,6 @@ public static class SeedData
 {
     public static async Task InitializeAsync(AppDbContext db)
     {
-        await db.Database.EnsureCreatedAsync();
-        await EnsureUserAccountSchemaAsync(db);
-
         if (await db.Employees.AnyAsync())
             return;
 
@@ -84,26 +81,5 @@ public static class SeedData
             new ShiftRequirement { ShiftId = shifts[3].Id, CompetenceId = competences[5].Id, MinimumCount = 1, MinimumLevel = "Intermediate" }
         );
         await db.SaveChangesAsync();
-    }
-
-    private static async Task EnsureUserAccountSchemaAsync(AppDbContext db)
-    {
-        await db.Database.ExecuteSqlRawAsync(@"
-IF OBJECT_ID(N'dbo.UserAccounts', N'U') IS NULL
-BEGIN
-    CREATE TABLE dbo.UserAccounts (
-        Id int IDENTITY(1,1) NOT NULL CONSTRAINT PK_UserAccounts PRIMARY KEY,
-        Username nvarchar(100) NOT NULL,
-        PasswordHash nvarchar(max) NOT NULL,
-        Role nvarchar(40) NOT NULL,
-        IsActive bit NOT NULL CONSTRAINT DF_UserAccounts_IsActive DEFAULT(1),
-        FailedLoginAttempts int NOT NULL CONSTRAINT DF_UserAccounts_FailedLoginAttempts DEFAULT(0),
-        LockedUntilUtc datetime2 NULL,
-        CreatedAtUtc datetime2 NOT NULL CONSTRAINT DF_UserAccounts_CreatedAtUtc DEFAULT(SYSUTCDATETIME()),
-        LastLoginAtUtc datetime2 NULL,
-        EmployeeId nvarchar(100) NULL
-    );
-    CREATE UNIQUE INDEX IX_UserAccounts_Username ON dbo.UserAccounts(Username);
-END");
     }
 }
