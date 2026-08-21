@@ -6,6 +6,6 @@ public sealed class EmployeeCompetence
     public Employee Employee { get; set; } = null!;
     public int CompetenceId { get; set; }
     public Competence Competence { get; set; } = null!;
-    public string Level { get; set; } = "Basic";
+    public CompetenceLevel Level { get; set; } = CompetenceLevel.Basic;
     public DateOnly? ValidUntil { get; set; }
 }
