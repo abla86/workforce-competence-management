@@ -112,6 +112,16 @@ SQL Server
 
 `ShiftAssignment` and `ShiftRequirement` are the authoritative scheduling model.
 
+## Database schema management
+
+The API uses **EF Core migrations**, not `EnsureCreated()`. The initial migration and model snapshot are checked into `backend/Workforce.Api/Migrations/`. On startup, pending migrations are applied before seed data is inserted.
+
+For future model changes:
+
+```bash
+dotnet ef migrations add <DescriptiveName> --project backend/Workforce.Api --startup-project backend/Workforce.Api
+```
+
 ## Security
 
 - HTTP-only authentication cookie
@@ -135,6 +145,7 @@ See [README-SECURITY.md](README-SECURITY.md), [docs/DEPLOYMENT.md](docs/DEPLOYME
 GitHub Actions is configured to verify:
 
 - .NET 10 restore/build/test
+- EF Core migration set
 - frontend `npm ci`, lint and build
 - Docker Compose configuration/build/start
 - SQL Server health
@@ -142,6 +153,7 @@ GitHub Actions is configured to verify:
 - frontend HTTP availability
 - bootstrap/login
 - authenticated dashboard and shifts endpoints
+- workforce CRUD/planning smoke flow
 - CodeQL analysis
 
 The backend currently has 11 xUnit tests. The frontend has lint/build validation but not yet a dedicated component/E2E suite.
@@ -160,8 +172,11 @@ Create `.env` from `.env.example` with non-production development values for:
 Then:
 
 ```bash
+docker compose down -v
 docker compose up --build
 ```
+
+The API applies the checked-in EF Core migration before seeding the demo database.
 
 Open:
 
@@ -183,7 +198,7 @@ Open:
 
 ## Prototype boundary
 
-This is a runnable full-stack prototype suitable for local development, demonstrations, controlled internal testing and portfolio presentation. It is **not claimed to be production-ready** until identity/MFA, migrations, secret management, backup/recovery, granular RBAC, audit attribution, privacy assessment, security review, observability and deployment controls have been completed for the target environment.
+This is a runnable full-stack prototype suitable for local development, demonstrations, controlled internal testing and portfolio presentation. It is **not claimed to be production-ready** until identity/MFA, production secret management, backup/recovery, granular RBAC, audit attribution, privacy assessment, security review, observability and deployment controls have been completed for the target environment.
 
 ## Related prototype
 
