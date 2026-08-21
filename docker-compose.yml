@@ -20,7 +20,7 @@ services:
       context: ./backend/Workforce.Api
     environment:
       ASPNETCORE_URLS: "http://+:8080"
-      ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=WorkforceCompetenceDb;User Id=sa;Password=${DB_PASSWORD:?Set DB_PASSWORD in .env};TrustServerCertificate=True"
+      ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=WorkforceCompetenceDb;User Id=sa;Password=${DB_PASSWORD:?Set DB_PASSWORD in .env};TrustServerCertificate=True;Encrypt=False"
       Jwt__SecretKey: "${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in .env}"
       Jwt__Issuer: "vaktklar"
       Jwt__Audience: "vaktklar-web"
