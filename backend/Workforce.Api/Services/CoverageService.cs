@@ -131,9 +131,11 @@ public sealed class CoverageService
     private static string DetermineStatus(ShiftCoverageResult result, IReadOnlyCollection<string> warnings)
     {
         if (result.Requirements.Any(x => x.IsCritical && !x.Covered) || !result.StaffingCovered ||
-            warnings.Any(x => x.StartsWith("Tilgjengelighet:", StringComparison.Ordinal)) || warnings.Any(x => x.StartsWith("Hviletid:", StringComparison.Ordinal))) return "RED";
-        if (result.Requirements.Any(x => !x.Covered) || warnings.Any(x => x.StartsWith("Dobbeltbooking:", StringComparison.Ordinal)) ||
-            warnings.Any(x => x.StartsWith("Ugyldig kompetansenivå", StringComparison.Ordinal))) return "YELLOW";
+            warnings.Any(x => x.StartsWith("Tilgjengelighet:", StringComparison.Ordinal)) ||
+            warnings.Any(x => x.StartsWith("Hviletid:", StringComparison.Ordinal)) ||
+            warnings.Any(x => x.StartsWith("Dobbeltbooking:", StringComparison.Ordinal)) ||
+            warnings.Any(x => x.StartsWith("Ugyldig kompetansenivå", StringComparison.Ordinal))) return "RED";
+        if (result.Requirements.Any(x => !x.Covered)) return "YELLOW";
         return "GREEN";
     }
 }
