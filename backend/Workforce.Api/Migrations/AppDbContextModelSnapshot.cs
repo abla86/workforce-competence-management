@@ -35,7 +35,7 @@ partial class AppDbContextModelSnapshot : ModelSnapshot
         });
         modelBuilder.Entity("Workforce.Api.Models.EmployeeCompetence", b =>
         {
-            b.Property<int>("EmployeeId").HasColumnType("int"); b.Property<int>("CompetenceId").HasColumnType("int"); b.Property<string>("Level").IsRequired().HasColumnType("nvarchar(max)"); b.Property<DateOnly?>("ValidUntil").HasColumnType("date"); b.HasKey("EmployeeId", "CompetenceId"); b.HasIndex("CompetenceId"); b.ToTable("EmployeeCompetences");
+            b.Property<int>("EmployeeId").HasColumnType("int"); b.Property<int>("CompetenceId").HasColumnType("int"); b.Property<int>("Level").HasColumnType("int"); b.Property<DateOnly?>("ValidUntil").HasColumnType("date"); b.HasKey("EmployeeId", "CompetenceId"); b.HasIndex("CompetenceId"); b.ToTable("EmployeeCompetences");
         });
         modelBuilder.Entity("Workforce.Api.Models.Shift", b =>
         {
@@ -47,7 +47,7 @@ partial class AppDbContextModelSnapshot : ModelSnapshot
         });
         modelBuilder.Entity("Workforce.Api.Models.ShiftRequirement", b =>
         {
-            b.Property<int>("ShiftId").HasColumnType("int"); b.Property<int>("CompetenceId").HasColumnType("int"); b.Property<bool>("IsCritical").HasColumnType("bit"); b.Property<int>("MinimumCount").HasColumnType("int"); b.Property<string>("MinimumLevel").IsRequired().HasColumnType("nvarchar(max)"); b.Property<string>("RequiredRole").HasColumnType("nvarchar(max)"); b.HasKey("ShiftId", "CompetenceId"); b.HasIndex("CompetenceId"); b.ToTable("ShiftRequirements");
+            b.Property<int>("ShiftId").HasColumnType("int"); b.Property<int>("CompetenceId").HasColumnType("int"); b.Property<bool>("IsCritical").HasColumnType("bit"); b.Property<int>("MinimumCount").HasColumnType("int"); b.Property<int>("MinimumLevel").HasColumnType("int"); b.Property<string>("RequiredRole").HasColumnType("nvarchar(max)"); b.HasKey("ShiftId", "CompetenceId"); b.HasIndex("CompetenceId"); b.ToTable("ShiftRequirements");
         });
         modelBuilder.Entity("Workforce.Api.Models.UserAccount", b =>
         {
