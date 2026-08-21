@@ -66,29 +66,27 @@ public sealed class PlanningAdvisorTests
     }
 
     [Fact]
-    public void InvalidRequirementLevelRejectsCandidate()
+    public void InvalidRequirementLevelCannotBeRepresentedByPlanningModel()
     {
         var competence = new Competence { Id = 1, Name = "First aid" };
         var employee = new Employee { Id = 10, Name = "Candidate", IsActive = true, PositionPercent = 100m,
-            Competences = [new EmployeeCompetence { CompetenceId = 1, Competence = competence, Level = "Advanced" }] };
+            Competences = [new EmployeeCompetence { CompetenceId = 1, Competence = competence, Level = CompetenceLevel.Advanced }] };
         var shift = new Shift { Id = 1, Date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1)), Hours = 8, MinimumStaff = 1,
-            Requirements = [new ShiftRequirement { CompetenceId = 1, Competence = competence, MinimumCount = 1, MinimumLevel = "Advcanced" }] };
+            Requirements = [new ShiftRequirement { CompetenceId = 1, Competence = competence, MinimumCount = 1, MinimumLevel = CompetenceLevel.Advanced }] };
         var result = new PlanningAdvisor().RankCandidates(shift, [employee], [shift]).Single();
-        Assert.False(result.Eligible);
-        Assert.Contains(result.HardFailures, x => x.Contains("Ugyldig påkrevd kompetansenivå"));
+        Assert.True(result.Eligible);
     }
 
     [Fact]
-    public void InvalidEmployeeLevelRejectsCandidate()
+    public void InvalidEmployeeLevelCannotBeRepresentedByPlanningModel()
     {
         var competence = new Competence { Id = 1, Name = "First aid" };
         var employee = new Employee { Id = 10, Name = "Candidate", IsActive = true, PositionPercent = 100m,
-            Competences = [new EmployeeCompetence { CompetenceId = 1, Competence = competence, Level = "Advcanced" }] };
+            Competences = [new EmployeeCompetence { CompetenceId = 1, Competence = competence, Level = CompetenceLevel.Basic }] };
         var shift = new Shift { Id = 1, Date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1)), Hours = 8, MinimumStaff = 1,
-            Requirements = [new ShiftRequirement { CompetenceId = 1, Competence = competence, MinimumCount = 1, MinimumLevel = "Basic" }] };
+            Requirements = [new ShiftRequirement { CompetenceId = 1, Competence = competence, MinimumCount = 1, MinimumLevel = CompetenceLevel.Advanced }] };
         var result = new PlanningAdvisor().RankCandidates(shift, [employee], [shift]).Single();
         Assert.False(result.Eligible);
-        Assert.Contains(result.HardFailures, x => x.Contains("Ugyldig kompetansenivå"));
     }
 
     [Fact]
@@ -96,9 +94,9 @@ public sealed class PlanningAdvisorTests
     {
         var competence = new Competence { Id = 1, Name = "First aid" };
         var employee = new Employee { Id = 10, Name = "Candidate", IsActive = true, PositionPercent = 100m,
-            Competences = [new EmployeeCompetence { CompetenceId = 1, Competence = competence, Level = "Advanced" }] };
+            Competences = [new EmployeeCompetence { CompetenceId = 1, Competence = competence, Level = CompetenceLevel.Advanced }] };
         var shift = new Shift { Id = 1, Date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1)), Hours = 8, MinimumStaff = 1,
-            Requirements = [new ShiftRequirement { CompetenceId = 1, Competence = competence, MinimumCount = 1, MinimumLevel = "Intermediate" }] };
+            Requirements = [new ShiftRequirement { CompetenceId = 1, Competence = competence, MinimumCount = 1, MinimumLevel = CompetenceLevel.Intermediate }] };
         var result = new PlanningAdvisor().RankCandidates(shift, [employee], [shift]).Single();
         Assert.True(result.Eligible);
     }
