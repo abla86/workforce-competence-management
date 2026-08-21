@@ -8,6 +8,9 @@ namespace Workforce.Api.Services;
 
 public sealed class CoverageService
 {
+    // Scoped service: list/dashboard endpoints can reuse one bulk evaluation during a request.
+    private IReadOnlyList<ShiftCoverageResult>? _requestCoverageCache;
+
     public ShiftCoverageResult AnalyzeShift(Shift shift)
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
@@ -53,6 +56,14 @@ public sealed class CoverageService
     public async Task<ShiftCoverageResult> EvaluateShiftAsync(AppDbContext db, int shiftId,
         string? actor = "system", bool writeAudit = true)
     {
+        if (!writeAudit)
+        {
+            _requestCoverageCache ??= await EvaluateShiftsAsync(db);
+            var cached = _requestCoverageCache.FirstOrDefault(x => x.ShiftId == shiftId);
+            if (cached is null) throw new ArgumentException($"Shift {shiftId} not found");
+            return cached;
+        }
+
         var shift = await LoadShiftAsync(db, shiftId);
         if (shift is null) throw new ArgumentException($"Shift {shiftId} not found");
         return await EvaluateShiftAsync(db, shift, actor, writeAudit);
@@ -67,9 +78,13 @@ public sealed class CoverageService
         return FinalizeResult(db, result, warnings, actor, writeAudit);
     }
 
-    // Used by list/dashboard endpoints: load the scheduling graph once, then evaluate in memory.
+    // Bulk path used by list/dashboard endpoints. The scoped cache makes repeated calls
+    // within the same HTTP request reuse this result instead of querying once per shift.
     public async Task<IReadOnlyList<ShiftCoverageResult>> EvaluateShiftsAsync(AppDbContext db)
     {
+        if (_requestCoverageCache is not null)
+            return _requestCoverageCache;
+
         var shifts = await db.Shifts
             .AsSplitQuery()
             .Include(x => x.Assignments).ThenInclude(x => x.Employee).ThenInclude(x => x.Competences)
@@ -86,6 +101,8 @@ public sealed class CoverageService
             AddAvailabilityWarningsFromLoadedShifts(shift, shifts, warnings);
             results.Add(FinalizeResultWithoutPersistence(result, warnings));
         }
+
+        _requestCoverageCache = results;
         return results;
     }
 
