@@ -2,29 +2,11 @@ using Workforce.Api.Models;
 
 namespace Workforce.Api.Services;
 
+/// <summary>
+/// Shared scheduling time rules used by coverage analysis and candidate ranking.
+/// </summary>
 public static class SchedulingRules
 {
-    private static readonly IReadOnlyDictionary<string, int> LevelRank =
-        new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["Basic"] = 1,
-            ["Intermediate"] = 2,
-            ["Advanced"] = 3
-        };
-
-    public static bool TryGetLevelRank(string? level, out int rank)
-    {
-        if (string.IsNullOrWhiteSpace(level))
-        {
-            rank = 0;
-            return false;
-        }
-
-        return LevelRank.TryGetValue(level.Trim(), out rank);
-    }
-
-    public static bool IsValidLevel(string? level) => TryGetLevelRank(level, out _);
-
     public static DateTime GetStart(Shift shift)
     {
         var time = shift.StartTime ?? shift.ShiftType.ToLowerInvariant() switch
