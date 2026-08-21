@@ -73,7 +73,7 @@ http://localhost:5080/openapi/v1.json
 dotnet test ../Workforce.Api.Tests/Workforce.Api.Tests.csproj --configuration Release
 ```
 
-The current test project contains 11 unit tests covering coverage decisions and planning constraints.
+The current test project contains **16 xUnit tests** covering coverage decisions, availability/overlap regressions and planning constraints.
 
 ## Main services
 
