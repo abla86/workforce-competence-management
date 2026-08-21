@@ -51,6 +51,8 @@ This document records the major interactive upgrades to the prototype. It is not
 - Shift-plan spreadsheet-compatible export
 - JSON backup export
 - HTML shift-plan sharing
+- ICS calendar export
+- Browser Print / Save as PDF
 
 ### Dashboard
 
@@ -59,6 +61,22 @@ This document records the major interactive upgrades to the prototype. It is not
 - Action-required shifts
 - Competence expiry/review alerts
 - Shift-level coverage explanations
+
+## Database migrations
+
+The prototype now uses a checked-in EF Core migration set instead of `EnsureCreated()`.
+
+- `backend/Workforce.Api/Migrations/20260821210000_InitialCreate.cs`
+- `backend/Workforce.Api/Migrations/AppDbContextModelSnapshot.cs`
+- API startup calls `Database.MigrateAsync()` before seeding.
+- CI validates the migration set with `dotnet ef migrations list`.
+
+For a clean local migration test:
+
+```powershell
+docker compose down -v
+docker compose up --build
+```
 
 ## Verification
 
@@ -69,6 +87,12 @@ dotnet test .\backend\Workforce.Api.Tests\Workforce.Api.Tests.csproj --configura
 ```
 
 The current backend test suite contains 11 unit tests.
+
+### EF migrations
+
+```powershell
+dotnet ef migrations list --project .\backend\Workforce.Api\Workforce.Api.csproj --startup-project .\backend\Workforce.Api\Workforce.Api.csproj
+```
 
 ### Frontend
 
@@ -97,12 +121,14 @@ GitHub Actions now validates the complete Docker stack by:
 1. building the Compose images;
 2. starting SQL Server, API and frontend;
 3. waiting for the API database health endpoint;
-4. checking the frontend response;
-5. bootstrapping a temporary CI administrator;
-6. logging in and storing the HTTP-only authentication cookie;
-7. calling protected dashboard and shift endpoints;
-8. printing service logs on failure; and
-9. tearing the stack down with its temporary database volume.
+4. applying the checked-in EF migration before seeding;
+5. checking the frontend response;
+6. bootstrapping a temporary CI administrator;
+7. logging in and storing the HTTP-only authentication cookie;
+8. calling protected dashboard and shift endpoints;
+9. running the workforce CRUD/planning smoke flow;
+10. printing service logs on failure; and
+11. tearing the stack down with its temporary database volume.
 
 ## Platform maintenance
 
