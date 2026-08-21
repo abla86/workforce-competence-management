@@ -76,7 +76,11 @@ public sealed class CoverageService
     {
         var shift = await LoadShiftAsync(db, shiftId);
         if (shift is null) throw new ArgumentException($"Shift {shiftId} not found");
+        return await EvaluateShiftAsync(db, shift, actor, writeAudit);
+    }
 
+    public async Task<ShiftCoverageResult> EvaluateShiftAsync(AppDbContext db, Shift shift, string? actor = "system", bool writeAudit = true)
+    {
         var result = AnalyzeShift(shift);
         var warnings = result.Warnings?.ToList() ?? [];
         await AddAvailabilityWarningsAsync(db, shift, warnings);
@@ -182,8 +186,6 @@ public sealed class CoverageService
         var end = SchedulingRules.GetEnd(shift);
         var employeeIds = shift.Assignments.Select(x => x.EmployeeId).Distinct().ToArray();
 
-        // Include adjacent days so overnight/rest rules and default shift times are evaluated
-        // consistently even when StartTime is not explicitly stored.
         var otherShifts = await db.Shifts
             .Where(s => s.Id != shift.Id &&
                         s.Date >= shift.Date.AddDays(-1) &&
@@ -242,14 +244,14 @@ public sealed class CoverageService
 
     private static string DetermineStatus(ShiftCoverageResult result, IReadOnlyCollection<string> warnings)
     {
-        if (result.Requirements.Any(x => x.IsCritical && !x.Covered) ||
-            !result.StaffingCovered ||
-            warnings.Any(x => x.StartsWith("Tilgjengelighet:", StringComparison.Ordinal)) ||
-            warnings.Any(x => x.StartsWith("Hviletid:", StringComparison.Ordinal)) ||
-            warnings.Any(x => x.StartsWith("Dobbeltbooking:", StringComparison.Ordinal)))
+        if (result.Requirements.Any(x => x.IsCritical && !x.Covered) || !result.StaffingCovered)
             return "RED";
 
-        if (result.Requirements.Any(x => !x.Covered))
+        if (warnings.Any(x =>
+                x.StartsWith("Tilgjengelighet:", StringComparison.Ordinal) ||
+                x.StartsWith("Hviletid:", StringComparison.Ordinal) ||
+                x.StartsWith("Dobbeltbooking:", StringComparison.Ordinal)) ||
+            result.Requirements.Any(x => !x.Covered))
             return "YELLOW";
 
         return "GREEN";
