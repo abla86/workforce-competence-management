@@ -7,6 +7,14 @@ public static class SeedData
 {
     public static async Task InitializeAsync(AppDbContext db)
     {
+        // Self-healing bootstrap for the prototype: the current repository intentionally
+        // has an empty Migrations folder. MigrateAsync() is therefore a no-op and cannot
+        // create the model tables. EnsureCreatedAsync() creates the schema when it is absent.
+        // Once real migrations are introduced, the migration path remains the source of truth.
+        var migrations = await db.Database.GetMigrationsAsync();
+        if (!migrations.Any())
+            await db.Database.EnsureCreatedAsync();
+
         if (await db.Employees.AnyAsync())
             return;
 
@@ -35,17 +43,17 @@ public static class SeedData
         await db.SaveChangesAsync();
 
         db.EmployeeCompetences.AddRange(
-            new EmployeeCompetence { EmployeeId = employees[0].Id, CompetenceId = competences[0].Id, Level = "Advanced" },
-            new EmployeeCompetence { EmployeeId = employees[0].Id, CompetenceId = competences[1].Id, Level = "Advanced" },
-            new EmployeeCompetence { EmployeeId = employees[0].Id, CompetenceId = competences[5].Id, Level = "Intermediate" },
-            new EmployeeCompetence { EmployeeId = employees[1].Id, CompetenceId = competences[1].Id, Level = "Intermediate" },
-            new EmployeeCompetence { EmployeeId = employees[1].Id, CompetenceId = competences[2].Id, Level = "Advanced" },
-            new EmployeeCompetence { EmployeeId = employees[2].Id, CompetenceId = competences[2].Id, Level = "Intermediate" },
-            new EmployeeCompetence { EmployeeId = employees[3].Id, CompetenceId = competences[0].Id, Level = "Intermediate" },
-            new EmployeeCompetence { EmployeeId = employees[3].Id, CompetenceId = competences[3].Id, Level = "Advanced", ValidUntil = DateOnly.FromDateTime(DateTime.Today.AddDays(30)) },
-            new EmployeeCompetence { EmployeeId = employees[4].Id, CompetenceId = competences[3].Id, Level = "Basic" },
-            new EmployeeCompetence { EmployeeId = employees[5].Id, CompetenceId = competences[4].Id, Level = "Advanced" },
-            new EmployeeCompetence { EmployeeId = employees[5].Id, CompetenceId = competences[5].Id, Level = "Advanced" }
+            new EmployeeCompetence { EmployeeId = employees[0].Id, CompetenceId = competences[0].Id, Level = CompetenceLevel.Advanced },
+            new EmployeeCompetence { EmployeeId = employees[0].Id, CompetenceId = competences[1].Id, Level = CompetenceLevel.Advanced },
+            new EmployeeCompetence { EmployeeId = employees[0].Id, CompetenceId = competences[5].Id, Level = CompetenceLevel.Intermediate },
+            new EmployeeCompetence { EmployeeId = employees[1].Id, CompetenceId = competences[1].Id, Level = CompetenceLevel.Intermediate },
+            new EmployeeCompetence { EmployeeId = employees[1].Id, CompetenceId = competences[2].Id, Level = CompetenceLevel.Advanced },
+            new EmployeeCompetence { EmployeeId = employees[2].Id, CompetenceId = competences[2].Id, Level = CompetenceLevel.Intermediate },
+            new EmployeeCompetence { EmployeeId = employees[3].Id, CompetenceId = competences[0].Id, Level = CompetenceLevel.Intermediate },
+            new EmployeeCompetence { EmployeeId = employees[3].Id, CompetenceId = competences[3].Id, Level = CompetenceLevel.Advanced, ValidUntil = DateOnly.FromDateTime(DateTime.Today.AddDays(30)) },
+            new EmployeeCompetence { EmployeeId = employees[4].Id, CompetenceId = competences[3].Id, Level = CompetenceLevel.Basic },
+            new EmployeeCompetence { EmployeeId = employees[5].Id, CompetenceId = competences[4].Id, Level = CompetenceLevel.Advanced },
+            new EmployeeCompetence { EmployeeId = employees[5].Id, CompetenceId = competences[5].Id, Level = CompetenceLevel.Advanced }
         );
 
         var today = DateOnly.FromDateTime(DateTime.Today);
@@ -73,12 +81,12 @@ public static class SeedData
             new ShiftAssignment { ShiftId = shifts[3].Id, EmployeeId = employees[5].Id }
         );
         db.ShiftRequirements.AddRange(
-            new ShiftRequirement { ShiftId = shifts[0].Id, CompetenceId = competences[1].Id, MinimumCount = 1, MinimumLevel = "Intermediate" },
-            new ShiftRequirement { ShiftId = shifts[0].Id, CompetenceId = competences[4].Id, MinimumCount = 1, MinimumLevel = "Advanced" },
-            new ShiftRequirement { ShiftId = shifts[1].Id, CompetenceId = competences[0].Id, MinimumCount = 1, MinimumLevel = "Intermediate" },
-            new ShiftRequirement { ShiftId = shifts[1].Id, CompetenceId = competences[2].Id, MinimumCount = 1, MinimumLevel = "Intermediate" },
-            new ShiftRequirement { ShiftId = shifts[2].Id, CompetenceId = competences[0].Id, MinimumCount = 1, MinimumLevel = "Intermediate" },
-            new ShiftRequirement { ShiftId = shifts[3].Id, CompetenceId = competences[5].Id, MinimumCount = 1, MinimumLevel = "Intermediate" }
+            new ShiftRequirement { ShiftId = shifts[0].Id, CompetenceId = competences[1].Id, MinimumCount = 1, MinimumLevel = CompetenceLevel.Intermediate },
+            new ShiftRequirement { ShiftId = shifts[0].Id, CompetenceId = competences[4].Id, MinimumCount = 1, MinimumLevel = CompetenceLevel.Advanced },
+            new ShiftRequirement { ShiftId = shifts[1].Id, CompetenceId = competences[0].Id, MinimumCount = 1, MinimumLevel = CompetenceLevel.Intermediate },
+            new ShiftRequirement { ShiftId = shifts[1].Id, CompetenceId = competences[2].Id, MinimumCount = 1, MinimumLevel = CompetenceLevel.Intermediate },
+            new ShiftRequirement { ShiftId = shifts[2].Id, CompetenceId = competences[0].Id, MinimumCount = 1, MinimumLevel = CompetenceLevel.Intermediate },
+            new ShiftRequirement { ShiftId = shifts[3].Id, CompetenceId = competences[5].Id, MinimumCount = 1, MinimumLevel = CompetenceLevel.Intermediate }
         );
         await db.SaveChangesAsync();
     }
