@@ -5,16 +5,11 @@ namespace Workforce.Api.Services;
 
 public sealed class PlanningAdvisor
 {
-    private static readonly Dictionary<string, int> LevelRank = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["Basic"] = 1, ["Intermediate"] = 2, ["Advanced"] = 3
-    };
-
     public IReadOnlyList<CandidateResult> RankCandidates(Shift shift, IReadOnlyList<Employee> employees, IReadOnlyList<Shift> allShifts)
     {
         var results = new List<CandidateResult>();
-        var shiftStart = GetStart(shift);
-        var shiftEnd = GetEnd(shift);
+        var shiftStart = SchedulingRules.GetStart(shift);
+        var shiftEnd = SchedulingRules.GetEnd(shift);
 
         foreach (var employee in employees.Where(e => e.IsActive))
         {
@@ -22,35 +17,54 @@ public sealed class PlanningAdvisor
             var warnings = new List<string>();
             var score = 100;
 
-            if (employee.PositionPercent <= 0)
-                hardFailures.Add("Ingen aktiv stillingsprosent");
+            if (employee.PositionPercent <= 0) hardFailures.Add("Ingen aktiv stillingsprosent");
+            if (shift.Assignments.Any(a => a.EmployeeId == employee.Id)) hardFailures.Add("Allerede tildelt denne vakten");
 
-            if (shift.Assignments.Any(a => a.EmployeeId == employee.Id))
-                hardFailures.Add("Allerede tildelt denne vakten");
+            if (employee.Absences.Any(a => a.Approved && a.From <= shift.Date && a.To >= shift.Date))
+                hardFailures.Add("Fravær på vaktdato");
 
-            var absence = employee.Absences.Any(a => a.Approved && a.From <= shift.Date && a.To >= shift.Date);
-            if (absence) hardFailures.Add("Fravær på vaktdato");
+            var employeeShifts = allShifts.Where(s => s.Id != shift.Id && s.Assignments.Any(a => a.EmployeeId == employee.Id)).ToList();
+            if (employeeShifts.Any(s => SchedulingRules.GetStart(s) < shiftEnd && SchedulingRules.GetEnd(s) > shiftStart))
+                hardFailures.Add("Allerede tildelt overlappende vakt");
 
-            var overlap = allShifts.Any(s => s.Id != shift.Id && s.Date == shift.Date &&
-                s.Assignments.Any(a => a.EmployeeId == employee.Id) &&
-                GetStart(s) < shiftEnd && GetEnd(s) > shiftStart);
-            if (overlap) hardFailures.Add("Allerede tildelt overlappende vakt");
-
-            var restViolation = allShifts.Any(s => s.Id != shift.Id && s.Assignments.Any(a => a.EmployeeId == employee.Id) &&
-                GetEnd(s) <= shiftStart && (shiftStart - GetEnd(s)).TotalHours < 11);
-            if (restViolation) hardFailures.Add("Mulig brudd på 11-timers hvile mellom vakter");
+            foreach (var existing in employeeShifts)
+            {
+                var existingStart = SchedulingRules.GetStart(existing);
+                var existingEnd = SchedulingRules.GetEnd(existing);
+                if (existingEnd <= shiftStart && (shiftStart - existingEnd).TotalHours < 11)
+                {
+                    hardFailures.Add("Mulig brudd på 11-timers hvile før vakten");
+                    break;
+                }
+                if (existingStart >= shiftEnd && (existingStart - shiftEnd).TotalHours < 11)
+                {
+                    hardFailures.Add("Mulig brudd på 11-timers hvile etter vakten");
+                    break;
+                }
+            }
 
             foreach (var requirement in shift.Requirements)
             {
-                var required = LevelRank.GetValueOrDefault(requirement.MinimumLevel, 1);
+                if (!SchedulingRules.TryGetLevelRank(requirement.MinimumLevel, out var required))
+                {
+                    hardFailures.Add($"Ugyldig påkrevd kompetansenivå: {requirement.MinimumLevel}");
+                    continue;
+                }
+
                 var competence = employee.Competences.FirstOrDefault(c => c.CompetenceId == requirement.CompetenceId);
                 if (competence is null)
                 {
                     hardFailures.Add($"Mangler {requirement.Competence.Name}");
                     continue;
                 }
-                if (LevelRank.GetValueOrDefault(competence.Level, 1) < required)
-                    hardFailures.Add($"For lavt nivå i {requirement.Competence.Name}");
+
+                if (!SchedulingRules.TryGetLevelRank(competence.Level, out var employeeLevel))
+                {
+                    hardFailures.Add($"Ugyldig kompetansenivå for {requirement.Competence.Name}: {competence.Level}");
+                    continue;
+                }
+
+                if (employeeLevel < required) hardFailures.Add($"For lavt nivå i {requirement.Competence.Name}");
                 if (competence.ValidUntil.HasValue && competence.ValidUntil.Value < shift.Date)
                     hardFailures.Add($"Utløpt {requirement.Competence.Name}");
                 else if (competence.ValidUntil.HasValue && competence.ValidUntil.Value <= shift.Date.AddDays(45))
@@ -67,30 +81,10 @@ public sealed class PlanningAdvisor
 
             score -= hardFailures.Count * 40;
             score -= warnings.Count * 5;
-
-            results.Add(new CandidateResult(
-                employee.Id, employee.Name, employee.Role,
-                Math.Max(0, score), hardFailures.Count == 0, hardFailures, warnings,
-                assignedHours));
+            results.Add(new CandidateResult(employee.Id, employee.Name, employee.Role, Math.Max(0, score), hardFailures.Count == 0,
+                hardFailures, warnings, assignedHours));
         }
 
         return results.OrderByDescending(x => x.Eligible).ThenByDescending(x => x.Score).ThenBy(x => x.RecentHours).ToList();
-    }
-
-    private static DateTime GetStart(Shift shift)
-    {
-        var time = shift.StartTime ?? shift.ShiftType.ToLowerInvariant() switch
-        {
-            "night" => new TimeOnly(22, 0),
-            "evening" => new TimeOnly(15, 0),
-            _ => new TimeOnly(7, 30)
-        };
-        return shift.Date.ToDateTime(time);
-    }
-
-    private static DateTime GetEnd(Shift shift)
-    {
-        var start = GetStart(shift);
-        return start.AddHours((double)shift.Hours);
     }
 }
