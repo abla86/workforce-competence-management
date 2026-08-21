@@ -156,7 +156,7 @@ GitHub Actions is configured to verify:
 - workforce CRUD/planning smoke flow
 - CodeQL analysis
 
-The backend currently has 11 xUnit tests. The frontend has lint/build validation but not yet a dedicated component/E2E suite.
+The backend currently contains **16 xUnit tests**. The frontend has lint/build validation but not yet a dedicated component/E2E suite. The latest backend changes require the CI run to pass before claiming the latest commit is machine-verified.
 
 See [docs/TEST-MATRIX.md](docs/TEST-MATRIX.md).
 
