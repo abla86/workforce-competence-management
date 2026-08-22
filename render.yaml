@@ -39,6 +39,8 @@ services:
         value: http://+:10000
       - key: DEMO_MODE
         value: "true"
+      - key: DEMO_PASSWORD
+        generateValue: true
       - key: DB_HOST
         fromService:
           type: pserv
@@ -83,4 +85,7 @@ services:
       - key: VITE_DEMO_USERNAME
         value: demo
       - key: VITE_DEMO_PASSWORD
-        value: VaktklarDemo2026!
+        fromService:
+          type: web
+          name: workforce-api
+          envVarKey: DEMO_PASSWORD
