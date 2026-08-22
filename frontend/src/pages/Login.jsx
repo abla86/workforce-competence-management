@@ -1,11 +1,36 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../services/api.js";
 
+const DEMO_AUTO_LOGIN = import.meta.env.VITE_DEMO_AUTO_LOGIN === "true";
+const DEMO_USERNAME = import.meta.env.VITE_DEMO_USERNAME ?? "";
+const DEMO_PASSWORD = import.meta.env.VITE_DEMO_PASSWORD ?? "";
+
 export default function Login({ onLogin }) {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  const [username, setUsername] = useState(DEMO_AUTO_LOGIN ? DEMO_USERNAME : "");
+  const [password, setPassword] = useState(DEMO_AUTO_LOGIN ? DEMO_PASSWORD : "");
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(DEMO_AUTO_LOGIN);
+
+  useEffect(() => {
+    if (!DEMO_AUTO_LOGIN || !DEMO_USERNAME || !DEMO_PASSWORD) {
+      setBusy(false);
+      return;
+    }
+
+    let cancelled = false;
+    api.login(DEMO_USERNAME, DEMO_PASSWORD)
+      .then((result) => {
+        if (!cancelled) onLogin(result.user);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err.status === 423 ? "Demo-kontoet er midlertidig låst." : "Demo-innloggingen kunne ikke gjennomføres.");
+          setBusy(false);
+        }
+      });
+
+    return () => { cancelled = true; };
+  }, [onLogin]);
 
   async function submit(event) {
     event.preventDefault();
@@ -19,6 +44,19 @@ export default function Login({ onLogin }) {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (DEMO_AUTO_LOGIN && busy && !error) {
+    return (
+      <main className="login-shell">
+        <section className="login-card" aria-labelledby="login-title">
+          <div className="login-mark">VK</div>
+          <p className="kicker">Vaktklar</p>
+          <h1 id="login-title">Åpner demo…</h1>
+          <p className="login-subtitle">Klargjør Workforce & Competence Management.</p>
+        </section>
+      </main>
+    );
   }
 
   return (
