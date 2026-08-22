@@ -41,6 +41,7 @@ dotnet ef migrations add InitialCreate `
     --startup-project $api `
     --context Workforce.Api.Data.AppDbContext `
     --output-dir Migrations `
+    --configuration Release `
     --no-build
 if ($LASTEXITCODE -ne 0) { throw "EF migration generation failed." }
 
@@ -58,6 +59,7 @@ dotnet ef migrations list `
     --project $api `
     --startup-project $api `
     --context Workforce.Api.Data.AppDbContext `
+    --configuration Release `
     --no-build
 if ($LASTEXITCODE -ne 0) { throw "EF migration validation failed." }
 
@@ -92,7 +94,6 @@ if ($LASTEXITCODE -ne 0) {
 
 docker compose down --remove-orphans
 if ($LASTEXITCODE -ne 0) { throw "Docker pre-start cleanup failed." }
-
 docker compose up -d
 if ($LASTEXITCODE -ne 0) {
     docker compose ps -a
