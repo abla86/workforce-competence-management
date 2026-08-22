@@ -19,6 +19,57 @@ function rowsToCsv(headers, rows) {
   return [headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n");
 }
 
+function parseCsv(text) {
+  const input = String(text || "").replace(/^\uFEFF/, "");
+  const delimiter = (input.split(/\r?\n/, 1)[0].match(/;/g) || []).length >
+    (input.split(/\r?\n/, 1)[0].match(/,/g) || []).length ? ";" : ",";
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let quoted = false;
+
+  for (let i = 0; i < input.length; i += 1) {
+    const char = input[i];
+    const next = input[i + 1];
+    if (char === '"') {
+      if (quoted && next === '"') { cell += '"'; i += 1; }
+      else quoted = !quoted;
+    } else if (char === delimiter && !quoted) {
+      row.push(cell); cell = "";
+    } else if ((char === "\n" || char === "\r") && !quoted) {
+      if (char === "\r" && next === "\n") i += 1;
+      row.push(cell); cell = "";
+      if (row.some((value) => value.trim() !== "")) rows.push(row);
+      row = [];
+    } else cell += char;
+  }
+  if (quoted) throw new Error("CSV contains an unterminated quoted field.");
+  row.push(cell);
+  if (row.some((value) => value.trim() !== "")) rows.push(row);
+  if (rows.length < 2) throw new Error("CSV must contain a header row and at least one data row.");
+
+  const headers = rows[0].map((value) => value.trim().toLowerCase().replace(/\s+/g, ""));
+  return rows.slice(1).map((values) => Object.fromEntries(headers.map((header, index) => [header, (values[index] ?? "").trim()])));
+}
+
+function firstValue(row, ...names) {
+  for (const name of names) {
+    const value = row[name.toLowerCase().replace(/\s+/g, "")];
+    if (value != null && value !== "") return value;
+  }
+  return "";
+}
+
+function parsePercent(value, fallback = 100) {
+  const parsed = Number(String(value || "").replace(",", ".").replace("%", ""));
+  return Number.isFinite(parsed) && parsed > 0 && parsed <= 100 ? parsed : fallback;
+}
+
+function parseHours(value) {
+  const parsed = Number(String(value || "").replace(",", "."));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 function htmlCell(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -70,9 +121,7 @@ function validateImport(data) {
   if (data.version && String(data.version) !== "1.0") throw new Error(`Unsupported backup version: ${data.version}`);
   if (!Array.isArray(data.employees) && !Array.isArray(data.competences)) throw new Error("JSON backup must contain employees and/or competences arrays.");
   if ((data.employees || []).length > 1000 || (data.competences || []).length > 1000) throw new Error("Import is limited to 1000 records per collection.");
-  for (const c of data.competences || []) {
-    if (!c || typeof c !== "object" || !String(c.name || "").trim()) throw new Error("Every competence must contain a name.");
-  }
+  for (const c of data.competences || []) if (!c || typeof c !== "object" || !String(c.name || "").trim()) throw new Error("Every competence must contain a name.");
   for (const e of data.employees || []) {
     if (!e || typeof e !== "object" || !String(e.name || "").trim() || !String(e.role || "").trim()) throw new Error("Every employee must contain a name and role.");
     const percent = Number(e.positionPercent ?? 100);
@@ -105,9 +154,7 @@ export default function DataExchange({ employees, competences, shifts, api, muta
     try {
       const body = shifts.map(shiftToIcs).join("\r\n");
       downloadBlob(`BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Workforce Competence Management//EN\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\n${body}\r\nEND:VCALENDAR\r\n`, "shift-plan.ics", "text/calendar;charset=utf-8");
-    } catch (error) {
-      mutate(async () => { throw error; }, "Calendar export failed.");
-    }
+    } catch (error) { mutate(async () => { throw error; }, "Calendar export failed."); }
   }
 
   function exportHtml() {
@@ -118,29 +165,92 @@ export default function DataExchange({ employees, competences, shifts, api, muta
 
   async function importJson(file) {
     if (file.size > 5 * 1024 * 1024) throw new Error("Import file is limited to 5 MB.");
-    const text = await file.text();
-    const data = JSON.parse(text);
+    const data = JSON.parse(await file.text());
     validateImport(data);
+
     const competenceByName = new Map(competences.map((c) => [String(c.name).trim().toLowerCase(), c]));
+    const employeeByKey = new Map(employees.map((e) => [`${e.name}|${e.role}`.toLowerCase(), e]));
     let created = 0;
+    let skipped = 0;
+
     for (const c of data.competences || []) {
       const name = String(c.name).trim();
-      if (competenceByName.has(name.toLowerCase())) continue;
-      await api.createCompetence({ name, category: String(c.category || "General").trim() });
-      competenceByName.set(name.toLowerCase(), c);
+      if (competenceByName.has(name.toLowerCase())) { skipped += 1; continue; }
+      const createdCompetence = await api.createCompetence({ name, category: String(c.category || "General").trim() });
+      competenceByName.set(name.toLowerCase(), createdCompetence);
       created += 1;
     }
+
     for (const e of data.employees || []) {
-      await api.createEmployee({ name: String(e.name).trim(), role: String(e.role).trim(), positionPercent: Number(e.positionPercent ?? 100) });
+      const name = String(e.name).trim();
+      const role = String(e.role).trim();
+      const key = `${name}|${role}`.toLowerCase();
+      if (employeeByKey.has(key)) { skipped += 1; continue; }
+      const createdEmployee = await api.createEmployee({
+        name,
+        role,
+        positionPercent: Number(e.positionPercent ?? 100),
+        maxWeeklyHours: e.maxWeeklyHours == null ? null : parseHours(e.maxWeeklyHours),
+      });
+      employeeByKey.set(key, createdEmployee);
       created += 1;
+
+      for (const competence of e.competences || []) {
+        const sourceName = String(competence.name || "").trim().toLowerCase();
+        const target = competenceByName.get(sourceName);
+        if (target) await api.setEmployeeCompetence(createdEmployee.id, { competenceId: target.id, level: competence.level || "Basic", validUntil: competence.validUntil || null });
+      }
     }
-    await mutate(async () => {}, `Import complete: ${created} records submitted.`);
+
+    await mutate(async () => {}, `JSON import complete: ${created} created, ${skipped} skipped. Shift assignments are not restored automatically.`);
+  }
+
+  async function importCsv(file) {
+    if (file.size > 5 * 1024 * 1024) throw new Error("Import file is limited to 5 MB.");
+    const rows = parseCsv(await file.text());
+    if (rows.length > 1000) throw new Error("CSV import is limited to 1000 rows.");
+
+    const name = file.name.toLowerCase();
+    const looksLikeCompetence = name.includes("compet") || rows.some((row) => firstValue(row, "category") && !firstValue(row, "role"));
+    let created = 0;
+    let skipped = 0;
+
+    if (looksLikeCompetence) {
+      const existing = new Set(competences.map((c) => c.name.trim().toLowerCase()));
+      for (const row of rows) {
+        const competenceName = firstValue(row, "name", "competence", "competencename");
+        if (!competenceName) throw new Error("Competence CSV requires a Name/Competence column.");
+        const key = competenceName.toLowerCase();
+        if (existing.has(key)) { skipped += 1; continue; }
+        await api.createCompetence({ name: competenceName, category: firstValue(row, "category", "type") || "General" });
+        existing.add(key); created += 1;
+      }
+    } else {
+      const existing = new Set(employees.map((e) => `${e.name}|${e.role}`.trim().toLowerCase()));
+      for (const row of rows) {
+        const employeeName = firstValue(row, "name", "employee", "employeename");
+        const role = firstValue(row, "role", "position", "jobtitle");
+        if (!employeeName || !role) throw new Error("Employee CSV requires Name and Role columns.");
+        const key = `${employeeName}|${role}`.trim().toLowerCase();
+        if (existing.has(key)) { skipped += 1; continue; }
+        await api.createEmployee({
+          name: employeeName,
+          role,
+          positionPercent: parsePercent(firstValue(row, "positionpercent", "position", "percentage", "percent")),
+          maxWeeklyHours: parseHours(firstValue(row, "maxweeklyhours", "weeklyhours", "hoursperweek")),
+        });
+        existing.add(key); created += 1;
+      }
+    }
+
+    await mutate(async () => {}, `CSV import complete: ${created} created, ${skipped} skipped.`);
   }
 
   function handleImport(event) {
     const file = event.target.files?.[0];
     if (!file) return;
-    importJson(file).catch((error) => mutate(async () => { throw error; }, error.message || "Import failed."));
+    const promise = file.name.toLowerCase().endsWith(".json") ? importJson(file) : importCsv(file);
+    promise.catch((error) => mutate(async () => { throw error; }, error.message || "Import failed."));
     event.target.value = "";
   }
 
@@ -159,7 +269,7 @@ export default function DataExchange({ employees, competences, shifts, api, muta
           <button className={secondary} onClick={exportHtml}>Share HTML</button>
           <button className={secondary} onClick={() => window.print()}>Print / PDF</button>
         </div><p className="muted">Exports contain operational employee data. Treat downloaded files as confidential and store them only in approved locations.</p></article>
-        <article className="panel"><div className="panel-heading"><div><h2>Import</h2><p>Controlled JSON import for employees and competences.</p></div></div><p>Files are limited to 5 MB and 1000 records per collection. Existing competence names are not duplicated. Employee records are added as new records. Shift assignments are intentionally not imported automatically.</p><label className={secondary} htmlFor="backup-import">Choose JSON backup</label><input id="backup-import" type="file" accept="application/json,.json" onChange={handleImport} hidden /></article>
+        <article className="panel"><div className="panel-heading"><div><h2>Import</h2><p>CSV and JSON import with duplicate protection.</p></div></div><p>CSV accepts comma- or semicolon-separated files. Employee imports require Name and Role. Competence imports require Name/Competence and optionally Category. Existing records with the same employee name + role or competence name are skipped.</p><label className={secondary} htmlFor="data-import">Choose CSV or JSON</label><input id="data-import" type="file" accept=".csv,.json,text/csv,application/json" onChange={handleImport} hidden /></article>
       </div>
       <article className="panel" style={{ marginTop: 16 }}><div className="panel-heading"><div><h2>Current dataset</h2><p>Records currently loaded from the API.</p></div></div><div className="metrics"><div className="metric-card"><strong>{employees.length}</strong><small>employees</small></div><div className="metric-card"><strong>{competences.length}</strong><small>competences</small></div><div className="metric-card"><strong>{shifts.length}</strong><small>shifts</small></div></div></article>
     </section>
