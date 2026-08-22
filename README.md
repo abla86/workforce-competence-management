@@ -208,10 +208,6 @@ Open:
 
 This is a runnable full-stack prototype suitable for local development, demonstrations, controlled internal testing and portfolio presentation. It is **not claimed to be production-ready** until identity/MFA, production secret management, backup/recovery, granular RBAC, audit attribution, privacy assessment, security review, observability and deployment controls have been completed for the target environment.
 
-## Related prototype
-
-A separate C#/.NET **Shift & Competence Planner** demonstrates the same domain at a smaller scope. This repository is the broader full-stack Prototype 2.
-
 ## Author
 
 Anne Beth Andersen
