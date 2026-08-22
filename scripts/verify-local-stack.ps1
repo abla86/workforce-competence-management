@@ -22,11 +22,10 @@ Get-ChildItem -Path . -Directory -Recurse -Force -ErrorAction SilentlyContinue |
     Where-Object { $_.Name -in @('bin','obj') } |
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 
-$api = ".ackend\Workforce.Api\Workforce.Api.csproj"
-$tests = ".ackend\Workforce.Api.Tests\Workforce.Api.Tests.csproj"
+$api = ".\backend\Workforce.Api\Workforce.Api.csproj"
+$tests = ".\backend\Workforce.Api.Tests\Workforce.Api.Tests.csproj"
+$migrations = ".\backend\Workforce.Api\Migrations"
 
-# EF design-time factory requires DB_PASSWORD or MSSQL_SA_PASSWORD.
-# Use the compose demo password when no local .env exists.
 if (-not $env:DB_PASSWORD -and -not $env:MSSQL_SA_PASSWORD) {
     $env:DB_PASSWORD = "VaktklarLocalDb_2026_StrongPassword_9X7K4M2P8Q6R5T3Y1"
 }
@@ -40,19 +39,40 @@ if ($LASTEXITCODE -ne 0) { throw "Backend build failed." }
 dotnet test $tests -c Release --no-build --logger "console;verbosity=minimal"
 if ($LASTEXITCODE -ne 0) { throw "Backend tests failed." }
 
-dotnet ef migrations list `
-    --project $api `
-    --startup-project $api
+# Regenerate the EF model snapshot/migration from the current model so runtime
+# startup cannot use a stale migration set.
+if (Test-Path $migrations) {
+    Get-ChildItem $migrations -File | Remove-Item -Force
+}
+else {
+    New-Item -ItemType Directory -Path $migrations | Out-Null
+}
+
+dotnet ef migrations add InitialCreate --project $api --startup-project $api --context Workforce.Api.Data.AppDbContext --output-dir Migrations --no-build
+if ($LASTEXITCODE -ne 0) { throw "EF migration generation failed." }
+
+$generated = Get-ChildItem $migrations -File | Select-Object -ExpandProperty Name
+$initial = $generated | Where-Object { $_ -match '^[0-9]+_InitialCreate\.cs$' }
+$designer = $generated | Where-Object { $_ -match '^[0-9]+_InitialCreate\.Designer\.cs$' }
+$snapshot = $generated | Where-Object { $_ -eq 'AppDbContextModelSnapshot.cs' }
+
+if ($initial.Count -ne 1 -or $designer.Count -ne 1 -or $snapshot.Count -ne 1) {
+    $generated | ForEach-Object { Write-Host " - $_" }
+    throw "EF did not generate exactly one InitialCreate migration, one Designer and one snapshot."
+}
+
+dotnet ef migrations list --project $api --startup-project $api --context Workforce.Api.Data.AppDbContext --no-build
 if ($LASTEXITCODE -ne 0) { throw "EF migration validation failed." }
 
-Push-Location .rontend
+dotnet build $api -c Release --no-restore
+if ($LASTEXITCODE -ne 0) { throw "Backend build after EF regeneration failed." }
+
+Push-Location .\frontend
 try {
     npm ci
     if ($LASTEXITCODE -ne 0) { throw "Frontend npm ci failed." }
-
     npm run lint
     if ($LASTEXITCODE -ne 0) { throw "Frontend lint failed." }
-
     npm run build
     if ($LASTEXITCODE -ne 0) { throw "Frontend build failed." }
 }
@@ -61,9 +81,7 @@ finally {
 }
 
 docker info *> $null
-if ($LASTEXITCODE -ne 0) {
-    throw "Docker Engine is not available. Open Docker Desktop."
-}
+if ($LASTEXITCODE -ne 0) { throw "Docker Engine is not available. Open Docker Desktop." }
 
 docker compose down -v --remove-orphans
 if ($LASTEXITCODE -ne 0) { throw "Docker cleanup failed." }
@@ -85,22 +103,16 @@ if ($LASTEXITCODE -ne 0) {
 $apiHealthy = $false
 for ($i = 1; $i -le 60; $i++) {
     $apiState = docker inspect --format='{{.State.Status}}' workforce-competence-management-api-1 2>$null
-
     if ($apiState -eq 'exited' -or $apiState -eq 'dead') {
         docker compose ps -a
         docker compose logs --no-color --tail=300 api
         throw "API container crashed."
     }
-
     try {
         $response = Invoke-WebRequest "http://localhost:5080/health" -UseBasicParsing -TimeoutSec 3
-        if ($response.StatusCode -eq 200) {
-            $apiHealthy = $true
-            break
-        }
+        if ($response.StatusCode -eq 200) { $apiHealthy = $true; break }
     }
     catch {}
-
     Start-Sleep -Seconds 2
 }
 
@@ -114,13 +126,9 @@ $frontendHealthy = $false
 for ($i = 1; $i -le 30; $i++) {
     try {
         $response = Invoke-WebRequest "http://localhost:8088/" -UseBasicParsing -TimeoutSec 3
-        if ($response.StatusCode -eq 200) {
-            $frontendHealthy = $true
-            break
-        }
+        if ($response.StatusCode -eq 200) { $frontendHealthy = $true; break }
     }
     catch {}
-
     Start-Sleep -Seconds 1
 }
 
@@ -131,8 +139,7 @@ if (-not $frontendHealthy) {
 }
 
 docker compose ps
-
 Write-Host "" 
-Write-Host "PASS: backend build/tests, EF migrations, frontend lint/build, Docker, API and frontend health verified." -ForegroundColor Green
+Write-Host "PASS: backend tests, fresh EF migration set, frontend lint/build, Docker, API and frontend health verified." -ForegroundColor Green
 Write-Host "Frontend: http://localhost:8088" -ForegroundColor Cyan
 Write-Host "API:      http://localhost:5080/health" -ForegroundColor Cyan
