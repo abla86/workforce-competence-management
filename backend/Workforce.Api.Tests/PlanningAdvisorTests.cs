@@ -46,7 +46,7 @@ public sealed class PlanningAdvisorTests
     {
         var employee = new Employee { Id = 10, Name = "Candidate", IsActive = true, PositionPercent = 100m };
         var target = new Shift { Id = 2, Date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1)), StartTime = new TimeOnly(7, 0), Hours = 8, MinimumStaff = 1 };
-        var existing = new Shift { Id = 3, Date = target.Date.AddDays(1), StartTime = new TimeOnly(18, 0), Hours = 8, MinimumStaff = 1,
+        var existing = new Shift { Id = 3, Date = target.Date, StartTime = new TimeOnly(12, 0), Hours = 8, MinimumStaff = 1,
             Assignments = [new ShiftAssignment { EmployeeId = 10, Employee = employee }] };
         var result = new PlanningAdvisor().RankCandidates(target, [employee], [existing, target]).Single();
         Assert.False(result.Eligible);
