@@ -5,17 +5,50 @@ A full-stack workforce-planning and competence-management prototype for **employ
 [![CI](https://github.com/abla86/workforce-competence-management/actions/workflows/ci.yml/badge.svg)](https://github.com/abla86/workforce-competence-management/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/abla86/workforce-competence-management/actions/workflows/codeql.yml/badge.svg)](https://github.com/abla86/workforce-competence-management/actions/workflows/codeql.yml)
 
+## Prototype status
+
+**Prototype 2 — verified runnable full-stack prototype.**
+
+The local stack has been end-to-end verified after the final EF migration/model correction:
+
+- **18/18 backend tests passed**
+- **EF model and migration/snapshot validation passed** with no pending model changes
+- **Frontend lint and production build passed**
+- **Docker Compose build passed**
+- **SQL Server healthy**
+- **ASP.NET Core API healthy**
+- **Frontend HTTP health passed**
+- **Demo authentication verified successfully**
+
+The repository is suitable for local demonstrations, controlled internal testing and portfolio presentation. It is **not production-ready** until the controls in [Production Readiness](docs/PRODUCTION-READINESS.md) are completed for the target organisation.
+
 ## Live demo
 
 **[Open Workforce & Competence Management](https://workforce-frontend.onrender.com)**
 
-The portfolio deployment uses a persistent SQL Server demo datastore and automatic demo login. It is intended for demonstrations and portfolio review only. Do not enter real employee, health, confidential or other sensitive data.
+The portfolio deployment uses a demo datastore and automatic demo login. It is intended for demonstrations and portfolio review only. **Do not enter real employee, health, confidential or other sensitive data.**
 
 The live deployment is configured in [`render.yaml`](render.yaml) and is automatically redeployed from `main` when the Render Blueprint is connected to this repository.
 
-## Prototype status
+## Local demo
 
-**Prototype 2 — functionally complete and runnable.** The repository is suitable for local demonstrations, controlled internal testing and portfolio presentation. It is not claimed to be production-ready until the controls in [Production Readiness](docs/PRODUCTION-READINESS.md) are completed for the target organisation.
+After the verification script has completed successfully:
+
+- Frontend: **http://localhost:8088**
+- API: **http://localhost:5080**
+- Health: **http://localhost:5080/health**
+- OpenAPI: **http://localhost:5080/openapi/v1.json**
+
+### Demo login
+
+When `DEMO_MODE=true` and the database has no user account, the seed process creates the local demo account:
+
+```text
+Username: demo
+Password: VaktklarDemo2026!
+```
+
+This credential is for the local/demo environment only and must not be reused as a production credential.
 
 ## What the prototype does
 
@@ -122,13 +155,17 @@ SQL Server
 
 ## Database schema management
 
-The API uses **EF Core migrations**, not `EnsureCreated()`. The initial migration and model snapshot are checked into `backend/Workforce.Api/Migrations/`. On startup, pending migrations are applied before seed data is inserted. An `IDesignTimeDbContextFactory<AppDbContext>` is included so EF Core CLI operations do not depend on application authentication secrets.
+The API uses **EF Core migrations**, not `EnsureCreated()`. The current `InitialCreate` migration and model snapshot are checked into `backend/Workforce.Api/Migrations/` and were regenerated from the current model. The verified model uses an index-compatible length for `Competence.Name` rather than `nvarchar(max)`.
+
+On startup, pending migrations are applied before seed data is inserted. An `IDesignTimeDbContextFactory<AppDbContext>` is used for EF Core CLI operations so design-time tooling does not depend on application authentication secrets.
 
 For future model changes:
 
 ```bash
 dotnet ef migrations add <DescriptiveName> --project backend/Workforce.Api --startup-project backend/Workforce.Api
 ```
+
+After a model change, the migration must be regenerated/updated and the complete verification workflow must pass before the change is considered complete.
 
 ## Security
 
@@ -140,7 +177,7 @@ dotnet ef migrations add <DescriptiveName> --project backend/Workforce.Api --sta
 - CORS configuration
 - Audit events
 - Security response headers
-- CodeQL v4
+- CodeQL
 - Dependabot
 - Non-root API container
 
@@ -164,26 +201,19 @@ GitHub Actions is configured to verify:
 - workforce CRUD/planning smoke flow
 - CodeQL analysis
 
-The backend currently contains **18 xUnit tests**: 16 core coverage/planning tests plus 2 database-backed availability regression tests. The frontend has lint/build validation but not yet a dedicated component/E2E suite.
+The backend currently contains **18 xUnit tests**, all of which passed in the final local verification. The frontend has lint/build validation; a dedicated component/E2E suite is not currently claimed.
 
 See [docs/TEST-MATRIX.md](docs/TEST-MATRIX.md).
 
 ## Run locally
 
-For a full local verification, use the repository's single verification script. It resets to the current `main`, restores/builds/tests the backend, validates the EF model against the checked-in migration snapshot, validates the frontend, rebuilds the Docker stack, waits for SQL Server/API/frontend health and prints the local URLs only after those checks pass.
+Use the repository's single verification script for a clean end-to-end local verification. It resets to the current `main`, restores/builds/tests the backend, validates the EF model against the checked-in migration snapshot, validates the frontend, rebuilds the Docker stack, waits for SQL Server/API/frontend health and prints the local URLs only after those checks pass.
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\verify-local-stack.ps1"
 ```
 
-The API applies the checked-in EF Core migration before seeding the demo database.
-
-Open:
-
-- Frontend: `http://localhost:8088`
-- API: `http://localhost:5080`
-- OpenAPI: `http://localhost:5080/openapi/v1.json`
-- Health: `http://localhost:5080/health`
+Do not bypass the verification workflow by suppressing EF pending-model warnings. A migration/model mismatch must be corrected rather than hidden.
 
 ## Documentation
 
