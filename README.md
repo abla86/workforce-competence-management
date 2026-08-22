@@ -5,6 +5,14 @@ A full-stack workforce-planning and competence-management prototype for **employ
 [![CI](https://github.com/abla86/workforce-competence-management/actions/workflows/ci.yml/badge.svg)](https://github.com/abla86/workforce-competence-management/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/abla86/workforce-competence-management/actions/workflows/codeql.yml/badge.svg)](https://github.com/abla86/workforce-competence-management/actions/workflows/codeql.yml)
 
+## Live demo
+
+**[Open Workforce & Competence Management](https://workforce-frontend.onrender.com)**
+
+The portfolio deployment uses a persistent SQL Server demo datastore and automatic demo login. It is intended for demonstrations and portfolio review only. Do not enter real employee, health, confidential or other sensitive data.
+
+The live deployment is configured in [`render.yaml`](render.yaml) and is automatically redeployed from `main` when the Render Blueprint is connected to this repository.
+
 ## Prototype status
 
 **Prototype 2 — functionally complete and runnable.** The repository is suitable for local demonstrations, controlled internal testing and portfolio presentation. It is not claimed to be production-ready until the controls in [Production Readiness](docs/PRODUCTION-READINESS.md) are completed for the target organisation.
