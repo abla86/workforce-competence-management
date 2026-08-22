@@ -12,8 +12,13 @@ public sealed class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbConte
         if (string.IsNullOrWhiteSpace(connectionString))
         {
             var password = Environment.GetEnvironmentVariable("DB_PASSWORD")
-                ?? Environment.GetEnvironmentVariable("MSSQL_SA_PASSWORD")
-                ?? "VaktklarLocalDb_2026_StrongPassword_9X7K4M2P8Q6R5T3Y1";
+                ?? Environment.GetEnvironmentVariable("MSSQL_SA_PASSWORD");
+
+            if (string.IsNullOrWhiteSpace(password))
+            {
+                throw new InvalidOperationException(
+                    "Database credentials are required for EF design-time operations. Set DB_PASSWORD or MSSQL_SA_PASSWORD.");
+            }
 
             connectionString =
                 $"Server=localhost,1433;Database=WorkforceCompetenceDb;User Id=sa;Password={password};TrustServerCertificate=True;Encrypt=False";
