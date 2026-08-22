@@ -21,10 +21,23 @@ export default function Shifts({ shifts, employees, competences, api, mutate }) 
     setShowCreate(false);
   }
 
+  async function assignEmployee(employeeToAssign) {
+    const id = Number(employeeToAssign);
+    try {
+      await api.assignEmployee(current.id, id);
+    } catch (error) {
+      if (error.status !== 409 || !error.body?.requiresOverride) throw error;
+      const warnings = (error.body.warnings || []).join("\n");
+      const reason = window.prompt(`Systemet har registrert arbeids-/hviletidsvarsler:\n\n${warnings}\n\nSkriv begrunnelse for å fortsette. Dette lagres i endringsloggen:`);
+      if (!reason?.trim()) throw new Error("Tildelingen ble ikke overstyrt. Begrunnelse er påkrevd.");
+      await api.assignEmployee(current.id, id, reason.trim());
+    }
+  }
+
   function addAssignment(event) {
     event.preventDefault();
     if (!manageShift || !employeeId) return;
-    mutate(() => api.assignEmployee(manageShift.id, Number(employeeId)), "Ansatt tildelt.");
+    mutate(() => assignEmployee(employeeId), "Ansatt tildelt.");
     setEmployeeId("");
   }
 
@@ -85,10 +98,10 @@ export default function Shifts({ shifts, employees, competences, api, mutate }) 
             <div className="manage-list">{current.assignments.map((assignment) => <div className="manage-row" key={assignment.employeeId}><div><strong>{assignment.name}</strong><span>{assignment.role}</span></div><div className="row-actions"><button className="mini-button" onClick={() => runScenario(assignment.employeeId)}>Hva hvis?</button><button className="mini-danger" onClick={() => mutate(() => api.removeAssignment(current.id, assignment.employeeId), "Tildeling fjernet.")}>Fjern</button></div></div>)}</div>
 
             <div className="editor-panel" style={{ marginTop: "18px", marginBottom: 0 }}>
-              <div className="panel-heading"><div><h3>Smart kandidatforslag</h3><p>Rangerer kvalifiserte ansatte og viser hvorfor andre ikke kan brukes.</p></div></div>
+              <div className="panel-heading"><div><h3>Smart kandidatforslag</h3><p>Rangerer kvalifiserte ansatte og viser hvorfor andre ikke kan brukes. Arbeidstid/hviletid er varsler og kan overstyres med begrunnelse.</p></div></div>
               {candidateLoading && <p className="muted">Analyserer tilgjengelighet, kompetanse og konflikter…</p>}
               {!candidateLoading && eligibleCandidates.length === 0 && <p className="muted">Ingen kvalifiserte kandidater funnet.</p>}
-              {!candidateLoading && eligibleCandidates.map((candidate) => <div className="manage-row" key={candidate.employeeId}><div><strong>{candidate.name}</strong><span>{candidate.role} · score {candidate.score}</span></div><button className="primary-button secondary" onClick={() => mutate(() => api.assignEmployee(current.id, candidate.employeeId), "Beste kandidat tildelt.")}>Velg</button></div>)}
+              {!candidateLoading && eligibleCandidates.map((candidate) => <div className="manage-row" key={candidate.employeeId}><div><strong>{candidate.name}</strong><span>{candidate.role} · score {candidate.score}{candidate.warnings?.length ? ` · ${candidate.warnings.length} varsel` : ""}</span></div><button className="primary-button secondary" onClick={() => mutate(() => assignEmployee(candidate.employeeId), "Beste kandidat tildelt.")}>Velg</button></div>)}
             </div>
           </div>
 
@@ -111,7 +124,7 @@ export default function Shifts({ shifts, employees, competences, api, mutate }) 
           <p>{scenario.coverageWithoutEmployees.assignedStaff} / {scenario.coverageWithoutEmployees.minimumStaff} bemanning · {scenario.coverageWithoutEmployees.competenceCoverage}% kompetansedekning</p>
           {(scenario.coverageWithoutEmployees.warnings || []).length > 0 && <ul>{scenario.coverageWithoutEmployees.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>}
           <h4>Foreslåtte erstattere</h4>
-          {scenario.suggestedReplacements.length === 0 ? <p className="muted">Ingen kvalifisert erstatter funnet.</p> : <div className="manage-list">{scenario.suggestedReplacements.slice(0, 5).map((candidate) => <div className="manage-row" key={candidate.employeeId}><div><strong>{candidate.name}</strong><span>{candidate.role} · score {candidate.score}</span></div><button className="primary-button secondary" onClick={() => mutate(() => api.assignEmployee(current.id, candidate.employeeId), "Erstatter tildelt.")}>Tildel</button></div>)}</div>}
+          {scenario.suggestedReplacements.length === 0 ? <p className="muted">Ingen kvalifisert erstatter funnet.</p> : <div className="manage-list">{scenario.suggestedReplacements.slice(0, 5).map((candidate) => <div className="manage-row" key={candidate.employeeId}><div><strong>{candidate.name}</strong><span>{candidate.role} · score {candidate.score}</span></div><button className="primary-button secondary" onClick={() => mutate(() => assignEmployee(candidate.employeeId), "Erstatter tildelt.")}>Tildel</button></div>)}</div>}
         </div>}
       </section>}
 
