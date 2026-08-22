@@ -74,6 +74,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             b.Property(x => x.CompetenceId).HasColumnType("int");
             b.Property(x => x.Level).HasColumnType("int");
             b.Property(x => x.ValidUntil).HasColumnType("date");
+            b.HasIndex(x => x.CompetenceId);
             b.HasOne(x => x.Competence).WithMany(x => x.Employees).HasForeignKey(x => x.CompetenceId).OnDelete(DeleteBehavior.Cascade).IsRequired();
             b.HasOne(x => x.Employee).WithMany(x => x.Competences).HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Cascade).IsRequired();
         });
@@ -97,6 +98,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             b.HasKey(x => new { x.ShiftId, x.EmployeeId });
             b.Property(x => x.ShiftId).HasColumnType("int");
             b.Property(x => x.EmployeeId).HasColumnType("int");
+            b.HasIndex(x => x.EmployeeId);
             b.HasOne(x => x.Employee).WithMany(x => x.ShiftAssignments).HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Cascade).IsRequired();
             b.HasOne(x => x.Shift).WithMany(x => x.Assignments).HasForeignKey(x => x.ShiftId).OnDelete(DeleteBehavior.Cascade).IsRequired();
         });
@@ -110,6 +112,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             b.Property(x => x.MinimumLevel).HasColumnType("int");
             b.Property(x => x.RequiredRole).HasColumnType("nvarchar(max)");
             b.Property(x => x.IsCritical).HasColumnType("bit");
+            b.HasIndex(x => x.CompetenceId);
             b.HasOne(x => x.Competence).WithMany(x => x.ShiftRequirements).HasForeignKey(x => x.CompetenceId).OnDelete(DeleteBehavior.Cascade).IsRequired();
             b.HasOne(x => x.Shift).WithMany(x => x.Requirements).HasForeignKey(x => x.ShiftId).OnDelete(DeleteBehavior.Cascade).IsRequired();
         });
