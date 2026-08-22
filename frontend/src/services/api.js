@@ -8,9 +8,11 @@ async function request(path, options = {}) {
   });
   if (!response.ok) {
     let message = `Request failed: ${response.status}`;
-    try { const body = await response.json(); message = body.message || message; } catch { /* non-JSON response */ }
+    let body = null;
+    try { body = await response.json(); message = body.message || message; } catch { /* non-JSON response */ }
     const error = new Error(message);
     error.status = response.status;
+    error.body = body;
     throw error;
   }
   if (response.status === 204) return null;
@@ -45,7 +47,7 @@ export const api = {
   createShift: (body) => request("/api/shifts", { method: "POST", body: JSON.stringify(body) }),
   updateShift: (id, body) => request(`/api/shifts/${id}`, { method: "PUT", body: JSON.stringify(body) }),
   deleteShift: (id) => request(`/api/shifts/${id}`, { method: "DELETE" }),
-  assignEmployee: (shiftId, employeeId) => request(`/api/shifts/${shiftId}/assignments`, { method: "POST", body: JSON.stringify({ employeeId }) }),
+  assignEmployee: (shiftId, employeeId, overrideReason = null) => request(`/api/shifts/${shiftId}/assignments`, { method: "POST", body: JSON.stringify({ employeeId, overrideReason }) }),
   removeAssignment: (shiftId, employeeId) => request(`/api/shifts/${shiftId}/assignments/${employeeId}`, { method: "DELETE" }),
   setShiftRequirement: (shiftId, body) => request(`/api/shifts/${shiftId}/requirements`, { method: "POST", body: JSON.stringify(body) }),
   removeShiftRequirement: (shiftId, competenceId) => request(`/api/shifts/${shiftId}/requirements/${competenceId}`, { method: "DELETE" }),
