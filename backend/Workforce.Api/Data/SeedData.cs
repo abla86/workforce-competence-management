@@ -7,11 +7,9 @@ public static class SeedData
 {
     public static async Task InitializeAsync(AppDbContext db)
     {
-        // Self-healing bootstrap for the prototype: the current repository intentionally
-        // has an empty Migrations folder. MigrateAsync() is therefore a no-op and cannot
-        // create the model tables. EnsureCreatedAsync() creates the schema when it is absent.
-        // Once real migrations are introduced, the migration path remains the source of truth.
-        var migrations = await db.Database.GetMigrationsAsync();
+        // Migrations are the source of truth. If the repository has no migrations,
+        // create the schema for the runnable prototype.
+        var migrations = db.Database.GetMigrations();
         if (!migrations.Any())
             await db.Database.EnsureCreatedAsync();
 
