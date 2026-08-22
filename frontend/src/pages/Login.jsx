@@ -4,7 +4,7 @@ import { api } from "../services/api.js";
 const PUBLIC_DEMO_HOST = window.location.hostname === "workforce-frontend.onrender.com";
 const DEMO_AUTO_LOGIN = import.meta.env.VITE_DEMO_AUTO_LOGIN === "true" || PUBLIC_DEMO_HOST;
 const DEMO_USERNAME = import.meta.env.VITE_DEMO_USERNAME || (PUBLIC_DEMO_HOST ? "demo" : "");
-const DEMO_PASSWORD = import.meta.env.VITE_DEMO_PASSWORD || (PUBLIC_DEMO_HOST ? "VaktklarDemo2026!" : "");
+const DEMO_PASSWORD = import.meta.env.VITE_DEMO_PASSWORD || "";
 
 export default function Login({ onLogin }) {
   const [username, setUsername] = useState(DEMO_AUTO_LOGIN ? DEMO_USERNAME : "");
