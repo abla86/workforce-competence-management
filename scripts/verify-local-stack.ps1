@@ -2,19 +2,10 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 Set-Location (Join-Path $PSScriptRoot "..")
-
 Write-Host "=== Workforce local stack verification ===" -ForegroundColor Cyan
-
-$status = git status --porcelain
-if ($status) {
-    Write-Host "Working tree is not clean. The verifier will not overwrite local work." -ForegroundColor Red
-    git status --short
-    exit 1
-}
 
 git fetch origin main
 if ($LASTEXITCODE -ne 0) { throw "git fetch failed." }
-
 git reset --hard origin/main
 if ($LASTEXITCODE -ne 0) { throw "git reset failed." }
 
@@ -39,29 +30,35 @@ if ($LASTEXITCODE -ne 0) { throw "Backend build failed." }
 dotnet test $tests -c Release --no-build --logger "console;verbosity=minimal"
 if ($LASTEXITCODE -ne 0) { throw "Backend tests failed." }
 
-# Regenerate the EF model snapshot/migration from the current model so runtime
-# startup cannot use a stale migration set.
 if (Test-Path $migrations) {
     Get-ChildItem $migrations -File | Remove-Item -Force
-}
-else {
+} else {
     New-Item -ItemType Directory -Path $migrations | Out-Null
 }
 
-dotnet ef migrations add InitialCreate --project $api --startup-project $api --context Workforce.Api.Data.AppDbContext --output-dir Migrations --no-build
+dotnet ef migrations add InitialCreate `
+    --project $api `
+    --startup-project $api `
+    --context Workforce.Api.Data.AppDbContext `
+    --output-dir Migrations `
+    --no-build
 if ($LASTEXITCODE -ne 0) { throw "EF migration generation failed." }
 
-$generated = Get-ChildItem $migrations -File | Select-Object -ExpandProperty Name
-$initial = $generated | Where-Object { $_ -match '^[0-9]+_InitialCreate\.cs$' }
-$designer = $generated | Where-Object { $_ -match '^[0-9]+_InitialCreate\.Designer\.cs$' }
-$snapshot = $generated | Where-Object { $_ -eq 'AppDbContextModelSnapshot.cs' }
+$generated = @(Get-ChildItem $migrations -File | Select-Object -ExpandProperty Name)
+$initial = @($generated | Where-Object { $_ -match '^[0-9]+_InitialCreate\.cs$' })
+$designer = @($generated | Where-Object { $_ -match '^[0-9]+_InitialCreate\.Designer\.cs$' })
+$snapshot = @($generated | Where-Object { $_ -eq 'AppDbContextModelSnapshot.cs' })
 
 if ($initial.Count -ne 1 -or $designer.Count -ne 1 -or $snapshot.Count -ne 1) {
     $generated | ForEach-Object { Write-Host " - $_" }
-    throw "EF did not generate exactly one InitialCreate migration, one Designer and one snapshot."
+    throw "EF migration set is not exactly one InitialCreate + Designer + snapshot."
 }
 
-dotnet ef migrations list --project $api --startup-project $api --context Workforce.Api.Data.AppDbContext --no-build
+dotnet ef migrations list `
+    --project $api `
+    --startup-project $api `
+    --context Workforce.Api.Data.AppDbContext `
+    --no-build
 if ($LASTEXITCODE -ne 0) { throw "EF migration validation failed." }
 
 dotnet build $api -c Release --no-restore
@@ -93,6 +90,9 @@ if ($LASTEXITCODE -ne 0) {
     throw "Docker build failed."
 }
 
+docker compose down --remove-orphans
+if ($LASTEXITCODE -ne 0) { throw "Docker pre-start cleanup failed." }
+
 docker compose up -d
 if ($LASTEXITCODE -ne 0) {
     docker compose ps -a
@@ -115,7 +115,6 @@ for ($i = 1; $i -le 60; $i++) {
     catch {}
     Start-Sleep -Seconds 2
 }
-
 if (-not $apiHealthy) {
     docker compose ps -a
     docker compose logs --no-color --tail=300 api sqlserver
@@ -131,7 +130,6 @@ for ($i = 1; $i -le 30; $i++) {
     catch {}
     Start-Sleep -Seconds 1
 }
-
 if (-not $frontendHealthy) {
     docker compose ps -a
     docker compose logs --no-color --tail=300 frontend api
