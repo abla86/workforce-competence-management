@@ -49,7 +49,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         {
             b.HasKey(x => x.Id);
             b.Property(x => x.Id).HasColumnType("int");
-            b.Property(x => x.Name).IsRequired().HasColumnType("nvarchar(max)");
+            b.Property(x => x.Name).IsRequired().HasMaxLength(255).HasColumnType("nvarchar(255)");
             b.Property(x => x.Category).IsRequired().HasColumnType("nvarchar(max)");
             b.HasIndex(x => x.Name).IsUnique();
         });
@@ -130,7 +130,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
             b.Property(x => x.CreatedAtUtc).HasColumnType("datetime2");
             b.Property(x => x.LastLoginAtUtc).HasColumnType("datetime2");
             b.Property(x => x.EmployeeId).HasColumnType("nvarchar(max)");
-            b.HasIndex(x => x.Username).IsUnique();
         });
     }
 }
