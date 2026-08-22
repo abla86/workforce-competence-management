@@ -13,6 +13,20 @@ public static class SeedData
         if (!migrations.Any())
             await db.Database.EnsureCreatedAsync();
 
+        // The prototype must be immediately usable after a clean Docker start.
+        // This demo account is intentionally local/demo-only; do not reuse it in production.
+        if (!await db.UserAccounts.AnyAsync())
+        {
+            db.UserAccounts.Add(new UserAccount
+            {
+                Username = "demo",
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword("VaktklarDemo2026!", 12),
+                Role = "Admin",
+                IsActive = true
+            });
+            await db.SaveChangesAsync();
+        }
+
         if (await db.Employees.AnyAsync())
             return;
 
