@@ -41,14 +41,9 @@ After the verification script has completed successfully:
 
 ### Demo login
 
-When `DEMO_MODE=true` and the database has no user account, the seed process creates the local demo account:
+When `DEMO_MODE=true` and the database has no user account, the seed process creates the local demo account.
 
-```text
-Username: demo
-Password: VaktklarDemo2026!
-```
-
-This credential is for the local/demo environment only and must not be reused as a production credential.
+The local Docker Compose configuration supplies the demo credentials for this non-production environment. Do not reuse demo credentials in production.
 
 ## What the prototype does
 
@@ -153,6 +148,54 @@ SQL Server
 
 `ShiftAssignment` and `ShiftRequirement` are the authoritative scheduling model.
 
+## Languages, data languages and configuration
+
+The repository should not be described as if every GitHub language entry were a programming language. The current implementation uses several distinct categories:
+
+### Programming languages
+
+- **C#** — backend/API, domain and planning logic
+- **JavaScript** — React frontend
+- **PowerShell** — local verification and automation scripts
+
+GitHub currently identifies **C# as the repository's primary language**. GitHub's language classification is separate from the broader technology stack below.
+
+### Data/query language
+
+- **SQL/T-SQL** — SQL Server database operations and relational data work, primarily through Entity Framework Core and SQL Server tooling
+
+### Markup, styling and configuration
+
+- **HTML**
+- **CSS**
+- **YAML** — GitHub Actions and configuration
+- **JSON** — API/data/configuration payloads
+- **Dockerfile** — container image definition
+- **Docker Compose YAML** — local multi-container orchestration
+
+### Frameworks and libraries
+
+- React 19
+- Vite 7
+- ASP.NET Core / .NET 10
+- Entity Framework Core 10
+- OpenAPI
+- xUnit
+- BCrypt.Net-Next
+
+### Database and infrastructure
+
+- SQL Server 2022 container image
+- Docker
+- Docker Compose
+
+### CI/CD and security tooling
+
+- GitHub Actions
+- CodeQL
+- Dependabot
+- Automated backend/frontend/Docker smoke verification
+
 ## Database schema management
 
 The API uses **EF Core migrations**, not `EnsureCreated()`. The current `InitialCreate` migration and model snapshot are checked into `backend/Workforce.Api/Migrations/` and were regenerated from the current model. The verified model uses an index-compatible length for `Competence.Name` rather than `nvarchar(max)`.
@@ -190,7 +233,7 @@ See [README-SECURITY.md](README-SECURITY.md), [docs/DEPLOYMENT.md](docs/DEPLOYME
 GitHub Actions is configured to verify:
 
 - .NET 10 restore/build/test
-- EF Core migration set
+- EF Core migration set and pending-model check
 - frontend `npm ci`, lint and build
 - Docker Compose configuration/build/start
 - SQL Server health
