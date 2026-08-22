@@ -30,7 +30,6 @@ if ($LASTEXITCODE -ne 0) { throw "Backend build failed." }
 dotnet test $tests -c Release --no-build --logger "console;verbosity=minimal"
 if ($LASTEXITCODE -ne 0) { throw "Backend tests failed." }
 
-# Validate the checked-in EF migration baseline. Do not generate a new migration here.
 if (-not (Test-Path $migrations)) { throw "Migrations directory is missing." }
 
 $migrationFiles = @(Get-ChildItem $migrations -File | Select-Object -ExpandProperty Name)
@@ -43,7 +42,16 @@ if ($migrationCs.Count -ne 1 -or $designerFiles.Count -ne 1 -or $snapshot.Count 
     throw "Checked-in EF baseline is not exactly one migration + one Designer + one snapshot."
 }
 
-# Explicitly use the single design-time AppDbContext.
+Write-Host "Checking EF model against the checked-in migration snapshot..." -ForegroundColor Yellow
+dotnet ef migrations has-pending-model-changes `
+    --project $api `
+    --startup-project $api `
+    --context Workforce.Api.Data.AppDbContext `
+    --configuration Release
+if ($LASTEXITCODE -ne 0) { throw "EF model has pending changes. Migration baseline must be regenerated; Docker verification is stopped." }
+
+Write-Host "EF model matches the checked-in migration snapshot." -ForegroundColor Green
+
 dotnet ef migrations list `
     --project $api `
     --startup-project $api `
@@ -127,6 +135,6 @@ if (-not $frontendHealthy) {
 
 docker compose ps
 Write-Host ""
-Write-Host "PASS: 18 backend tests, checked-in EF baseline, frontend lint/build, Docker, API and frontend health verified." -ForegroundColor Green
+Write-Host "PASS: 18 backend tests, EF model/snapshot, frontend lint/build, Docker, API and frontend health verified." -ForegroundColor Green
 Write-Host "Frontend: http://localhost:8088" -ForegroundColor Cyan
 Write-Host "API:      http://localhost:5080/health" -ForegroundColor Cyan
