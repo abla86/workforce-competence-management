@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Workforce.Api.Data;
+using Workforce.Api.DTOs;
 using Workforce.Api.Models;
 using Workforce.Api.Services;
 
@@ -269,8 +270,8 @@ internal sealed class RoleGuardStartupFilter : IStartupFilter
             }
             var validUntil = DateOnly.TryParse(Get("ValidUntil"), out var parsedDate) ? parsedDate : (DateOnly?)null;
             var item = await db.EmployeeCompetences.FindAsync(employee.Id, competence.Id);
-            if (item is null) db.EmployeeCompetences.Add(new EmployeeCompetence { EmployeeId = employee.Id, CompetenceId = competence.Id, Level = level, ValidUntil = validUntil });
-            else { item.Level = level; item.ValidUntil = validUntil; }
+            if (item is null) { db.EmployeeCompetences.Add(new EmployeeCompetence { EmployeeId = employee.Id, CompetenceId = competence.Id, Level = level, ValidUntil = validUntil }); created++; }
+            else { item.Level = level; item.ValidUntil = validUntil; updated++; }
         }
         await db.SaveChangesAsync(); await context.Response.WriteAsJsonAsync(new { created, updated, errors });
     }
@@ -284,27 +285,31 @@ internal sealed class RoleGuardStartupFilter : IStartupFilter
 
     private static string BuildShiftHtml(IEnumerable<Shift> shifts, CoverageService coverage)
     {
-        var sb = new StringBuilder();
-        sb.Append("<html><head><meta charset='utf-8'><style>table{border-collapse:collapse}th,td{border:1px solid #999;padding:6px}.green{background:#d9ead3}.yellow{background:#fff2cc}.red{background:#f4cccc}</style></head><body><h1>Vaktklar – vaktplan</h1><table><tr><th>Dato</th><th>Vakt</th><th>Avdeling</th><th>Start</th><th>Slutt</th><th>Minimum</th><th>Bemannet</th><th>Status</th><th>Kommentar</th></tr>");
+        var sb = new StringBuilder("<html><head><meta charset='utf-8'><style>table{border-collapse:collapse}th,td{border:1px solid #999;padding:6px}.green{background:#d9ead3}.yellow{background:#fff2cc}.red{background:#f4cccc}</style></head><body><h1>Vaktklar – vaktplan</h1><table><tr><th>Dato</th><th>Vakt</th><th>Avdeling</th><th>Start</th><th>Slutt</th><th>Minimum</th><th>Bemannet</th><th>Status</th><th>Kommentar</th></tr>");
         foreach (var shift in shifts)
         {
             var result = coverage.AnalyzeShift(shift); var status = result.OverallStatus ?? "UNKNOWN";
-            var css = status == "GREEN" ? "green" : status == "YELLOW" ? "yellow" : "red";
-            sb.Append($"<tr class='{css}'>");
-            sb.Append($"<td>{System.Net.WebUtility.HtmlEncode(shift.Date.ToString("yyyy-MM-dd"))}</td>");
-            sb.Append($"<td>{System.Net.WebUtility.HtmlEncode(shift.ShiftType)}</td>");
-            sb.Append($"<td>{System.Net.WebUtility.HtmlEncode(shift.Department)}</td>");
-            sb.Append($"<td>{shift.StartTime}</td><td>{shift.StartTime?.AddHours((double)shift.Hours)}</td>");
-            sb.Append($"<td>{shift.MinimumStaff}</td><td>{shift.Assignments.Count}</td>");
-            sb.Append($"<td>{System.Net.WebUtility.HtmlEncode(status)}</td>");
-            sb.Append($"<td>{System.Net.WebUtility.HtmlEncode(string.Join("; ", result.Warnings ?? []))}</td>");
+            sb.Append("<tr class='").Append(status.ToLowerInvariant()).Append("'>");
+            sb.Append("<td>").Append(System.Net.WebUtility.HtmlEncode(shift.Date.ToString("yyyy-MM-dd"))).Append("</td>");
+            sb.Append("<td>").Append(System.Net.WebUtility.HtmlEncode(shift.ShiftType)).Append("</td>");
+            sb.Append("<td>").Append(System.Net.WebUtility.HtmlEncode(shift.Department)).Append("</td>");
+            sb.Append("<td>").Append(shift.StartTime?.ToString("HH:mm") ?? "-").Append("</td>");
+            sb.Append("<td>").Append(shift.StartTime.HasValue ? SchedulingRules.GetEnd(shift).ToString("HH:mm") : "-").Append("</td>");
+            sb.Append("<td>").Append(shift.MinimumStaff).Append("</td>");
+            sb.Append("<td>").Append(shift.Assignments.Count).Append("</td>");
+            sb.Append("<td>").Append(System.Net.WebUtility.HtmlEncode(result.OverallStatus)).Append("</td>");
+            sb.Append("<td>").Append(System.Net.WebUtility.HtmlEncode(string.Join("; ", result.Warnings ?? []))).Append("</td>");
             sb.Append("</tr>");
         }
         sb.Append("</table></body></html>");
         return sb.ToString();
     }
 
-    private static string Csv(string? value) => $"\"{(value ?? "").Replace("\"", "\"\"")}\"";
+    private static string Csv(string? value)
+    {
+        var text = value ?? "";
+        return $"\"{text.Replace("\"", "\"\"")}\"";
+    }
 
     private static string NullIfEmpty(string value) => string.IsNullOrWhiteSpace(value) ? "" : value;
 
