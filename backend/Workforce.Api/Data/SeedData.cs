@@ -7,16 +7,7 @@ public static class SeedData
 {
     public static async Task InitializeAsync(AppDbContext db)
     {
-        // Migrations are the source of truth. If the repository has no migrations,
-        // create the schema for the runnable prototype.
-        var migrations = db.Database.GetMigrations();
-        if (!migrations.Any())
-            await db.Database.EnsureCreatedAsync();
-
-        // The demo account is created only when explicitly running in demo mode.
-        // Production deployments must bootstrap their own administrator account.
-        var demoMode = string.Equals(Environment.GetEnvironmentVariable("DEMO_MODE"), "true", StringComparison.OrdinalIgnoreCase);
-        if (demoMode && !await db.UserAccounts.AnyAsync())
+        if (await db.UserAccounts.AnyAsync() == false && string.Equals(Environment.GetEnvironmentVariable("DEMO_MODE"), "true", StringComparison.OrdinalIgnoreCase))
         {
             db.UserAccounts.Add(new UserAccount
             {
