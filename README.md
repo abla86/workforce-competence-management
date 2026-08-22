@@ -160,9 +160,11 @@ The repository should not be described as if every GitHub language entry were a 
 
 GitHub currently identifies **C# as the repository's primary language**. GitHub's language classification is separate from the broader technology stack below.
 
-### Data/query language
+### Data and database technologies
 
-- **SQL/T-SQL** — SQL Server database operations and relational data work, primarily through Entity Framework Core and SQL Server tooling
+- **SQL Server 2022** is the database engine used by the application.
+- **Entity Framework Core 10** is the application's ORM and migration layer.
+- The repository does **not** currently contain standalone `.sql`/T-SQL source files; SQL Server is accessed through EF Core and SQL Server tooling such as the container health check.
 
 ### Markup, styling and configuration
 
