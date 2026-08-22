@@ -1,216 +1,113 @@
-function downloadBlob(content, filename, type) {
-  const blob = new Blob([content], { type });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 0);
+import { useMemo, useState } from "react";
+
+const XLSX_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
+const key = (v) => String(v ?? "").trim().toLowerCase();
+const num = (v, fallback = 0) => { const n = Number(String(v ?? "").replace(",", ".").replace("%", "")); return Number.isFinite(n) ? n : fallback; };
+const isoDate = (v) => { const s = String(v ?? "").slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null; };
+const clock = (v) => { const s = String(v ?? "").slice(0, 5); return /^\d{2}:\d{2}$/.test(s) ? s : null; };
+const employeeKey = (e) => `${key(e.name)}|${key(e.role)}`;
+const shiftKey = (s) => `${s.date}|${s.startTime || ""}|${key(s.shiftType)}|${key(s.department)}`;
+
+function csvRows(text) {
+  const rows = []; let row = []; let cell = ""; let quoted = false;
+  for (let i = 0; i < text.length; i += 1) { const c = text[i]; if (c === '"') { if (quoted && text[i + 1] === '"') { cell += '"'; i += 1; } else quoted = !quoted; } else if (c === "," && !quoted) { row.push(cell); cell = ""; } else if ((c === "\n" || c === "\r") && !quoted) { if (c === "\r" && text[i + 1] === "\n") i += 1; row.push(cell); if (row.some((x) => x.trim())) rows.push(row); row = []; cell = ""; } else cell += c; }
+  if (cell || row.length) { row.push(cell); if (row.some((x) => x.trim())) rows.push(row); }
+  if (!rows.length) return [];
+  const headers = rows[0].map((x) => key(x).replaceAll(" ", ""));
+  return rows.slice(1).map((values) => Object.fromEntries(headers.map((h, i) => [h, (values[i] ?? "").trim()])));
+}
+const field = (row, ...names) => { for (const n of names) { const v = row[key(n).replaceAll(" ", "")]; if (v !== undefined && v !== "") return v; } return ""; };
+
+function ensureXlsx() {
+  if (window.XLSX) return Promise.resolve(window.XLSX);
+  return new Promise((resolve, reject) => { const s = document.createElement("script"); s.src = XLSX_URL; s.onload = () => window.XLSX ? resolve(window.XLSX) : reject(new Error("Excel-motoren kunne ikke lastes.")); s.onerror = () => reject(new Error("Excel-motoren kunne ikke lastes.")); document.head.appendChild(s); });
 }
 
-function csvCell(value) {
-  const text = value == null ? "" : String(value);
-  return `"${text.replaceAll('"', '""')}"`;
+function csvToPayload(text, filename) {
+  const rows = csvRows(text); if (!rows.length) throw new Error("CSV-filen er tom.");
+  const headers = Object.keys(rows[0]); const isCompetence = headers.includes("competencename") || headers.includes("competence"); const isShift = headers.includes("date") && (headers.includes("shifttype") || headers.includes("shift"));
+  if (isCompetence) return { employees: [], competences: rows.map((r) => ({ name: field(r, "CompetenceName", "Competence", "Name"), category: field(r, "Category") || "General" })), shifts: [] };
+  if (isShift) return { employees: [], competences: [], shifts: rows.map((r) => ({ date: isoDate(field(r, "Date")), startTime: clock(field(r, "StartTime", "Start")), shiftType: field(r, "ShiftType", "Shift", "Type") || "Shift", department: field(r, "Department"), hours: num(field(r, "Hours"), 8), minimumStaff: num(field(r, "MinimumStaff", "Minimum"), 1), isCritical: key(field(r, "IsCritical")) === "true", isPublished: key(field(r, "IsPublished")) === "true" })) };
+  return { employees: rows.map((r) => ({ name: field(r, "Name", "Employee", "EmployeeName"), role: field(r, "Role", "Position", "JobTitle"), department: field(r, "Department"), authorization: field(r, "Authorization"), positionPercent: num(field(r, "PositionPercent", "Percent"), 100), maxWeeklyHours: num(field(r, "MaxWeeklyHours", "WeeklyHours"), 37.5), isActive: key(field(r, "IsActive")) !== "false" })), competences: [], shifts: [] };
 }
 
-function rowsToCsv(headers, rows) {
-  return [headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n");
+function jsonToPayload(data) {
+  const employees = (data.employees || data.Employees || []).map((e) => ({ name: e.name || e.Name, role: e.role || e.Role, department: e.department || e.Department || "", authorization: e.authorization || e.Authorization || "", positionPercent: num(e.positionPercent ?? e.PositionPercent, 100), maxWeeklyHours: num(e.maxWeeklyHours ?? e.MaxWeeklyHours, 37.5), isActive: e.isActive ?? e.IsActive ?? true, competences: (e.competences || e.Competences || []).map((c) => ({ name: c.name || c.Name, level: c.level || c.Level || "Basic", validUntil: c.validUntil || c.ValidUntil || null })) }));
+  const competences = (data.competences || data.Competences || []).map((c) => ({ name: c.name || c.Name, category: c.category || c.Category || "General" }));
+  const shifts = (data.shifts || data.Shifts || []).map((s) => ({ date: isoDate(s.date || s.Date), startTime: clock(s.startTime || s.StartTime), shiftType: s.shiftType || s.ShiftType || "Shift", department: s.department || s.Department || "", hours: num(s.hours ?? s.Hours, 8), minimumStaff: num(s.minimumStaff ?? s.MinimumStaff, 1), isCritical: Boolean(s.isCritical ?? s.IsCritical), isPublished: Boolean(s.isPublished ?? s.IsPublished), assignments: (s.assignments || s.Assignments || []).map((a) => a.name ? `${a.name}|${a.role || ""}` : String(a)), requirements: (s.requirements || s.Requirements || []).map((r) => ({ competenceName: r.competenceName || r.Competence?.Name || r.name, minimumCount: num(r.minimumCount ?? r.MinimumCount, 1), minimumLevel: r.minimumLevel || r.MinimumLevel || "Basic", requiredRole: r.requiredRole || r.RequiredRole || null, isCritical: Boolean(r.isCritical ?? r.IsCritical) })) }));
+  return { employees, competences, shifts };
 }
 
-function parseCsv(text) {
-  const input = String(text || "").replace(/^\uFEFF/, "");
-  const firstLine = input.split(/\r?\n/, 1)[0];
-  const delimiter = (firstLine.match(/;/g) || []).length > (firstLine.match(/,/g) || []).length ? ";" : ",";
-  const rows = [];
-  let row = [];
-  let cell = "";
-  let quoted = false;
-  for (let i = 0; i < input.length; i += 1) {
-    const char = input[i];
-    const next = input[i + 1];
-    if (char === '"') {
-      if (quoted && next === '"') { cell += '"'; i += 1; }
-      else quoted = !quoted;
-    } else if (char === delimiter && !quoted) {
-      row.push(cell); cell = "";
-    } else if ((char === "\n" || char === "\r") && !quoted) {
-      if (char === "\r" && next === "\n") i += 1;
-      row.push(cell); cell = "";
-      if (row.some((value) => value.trim() !== "")) rows.push(row);
-      row = [];
-    } else cell += char;
+function icsToPayload(text) {
+  const shifts = [];
+  for (const block of text.split(/BEGIN:VEVENT/i).slice(1)) {
+    const start = block.match(/DTSTART(?:;[^:]+)?:([0-9TZ]+)/i)?.[1]; const end = block.match(/DTEND(?:;[^:]+)?:([0-9TZ]+)/i)?.[1]; if (!start) continue;
+    const m = start.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})/); if (!m) continue; const em = end?.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})/); const summary = block.match(/SUMMARY:(.*)/i)?.[1]?.trim() || "Shift"; const description = block.match(/DESCRIPTION:(.*)/i)?.[1] || "";
+    const startDate = new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:00`); const endDate = em ? new Date(`${em[1]}-${em[2]}-${em[3]}T${em[4]}:${em[5]}:00`) : new Date(startDate.getTime() + 8 * 3600000); const minimum = num(description.match(/Minimum staffing:\s*(\d+)/i)?.[1], 1);
+    shifts.push({ date: `${m[1]}-${m[2]}-${m[3]}`, startTime: `${m[4]}:${m[5]}`, shiftType: summary, department: description.match(/Department:\s*([^;]+)/i)?.[1]?.trim() || "", hours: Math.max(0.25, (endDate - startDate) / 3600000), minimumStaff: minimum, isCritical: false, isPublished: false });
   }
-  if (quoted) throw new Error("CSV contains an unterminated quoted field.");
-  row.push(cell);
-  if (row.some((value) => value.trim() !== "")) rows.push(row);
-  if (rows.length < 2) throw new Error("CSV must contain a header row and at least one data row.");
-  const headers = rows[0].map((value) => value.trim().toLowerCase().replace(/\s+/g, ""));
-  return rows.slice(1).map((values) => Object.fromEntries(headers.map((header, index) => [header, (values[index] ?? "").trim()])));
+  return { employees: [], competences: [], shifts };
 }
 
-function firstValue(row, ...names) {
-  for (const name of names) {
-    const value = row[name.toLowerCase().replace(/\s+/g, "")];
-    if (value != null && value !== "") return value;
-  }
-  return "";
-}
-
-function parsePercent(value, fallback = 100) {
-  const parsed = Number(String(value || "").replace(",", ".").replace("%", ""));
-  return Number.isFinite(parsed) && parsed > 0 && parsed <= 100 ? parsed : fallback;
-}
-
-function parseHours(value) {
-  const parsed = Number(String(value || "").replace(",", "."));
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-}
-
-function htmlCell(value) {
-  return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
-}
-
-function icsText(value) {
-  return String(value ?? "").replaceAll("\\", "\\\\").replaceAll(";", "\\;").replaceAll(",", "\\,").replaceAll(/\r?\n/g, "\\n");
-}
-
-function icsLocalDateTime(date, start, hours) {
-  const dateText = String(date || "").slice(0, 10);
-  const startText = String(start || "08:00").slice(0, 5);
-  const [year, month, day] = dateText.split("-").map(Number);
-  const [hour, minute] = startText.split(":").map(Number);
-  if (![year, month, day, hour, minute].every(Number.isFinite)) throw new Error("Shift contains an invalid date or start time.");
-  const startDate = new Date(year, month - 1, day, hour, minute, 0, 0);
-  if (Number.isNaN(startDate.getTime())) throw new Error("Shift contains an invalid date or start time.");
-  const endDate = new Date(startDate.getTime() + Number(hours || 0) * 60 * 60 * 1000);
-  const fmt = (d) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}T${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}00`;
-  return [fmt(startDate), fmt(endDate)];
-}
-
-function shiftToIcs(shift) {
-  const [dtStart, dtEnd] = icsLocalDateTime(shift.date || shift.Date, shift.startTime || shift.StartTime, Number(shift.hours || shift.Hours || 0));
-  const id = shift.id || shift.Id;
-  const type = shift.shiftType || shift.ShiftType || "Shift";
-  const department = shift.department || shift.Department || "";
-  return ["BEGIN:VEVENT", `UID:workforce-shift-${icsText(id)}@workforce-competence`, `DTSTART:${dtStart}`, `DTEND:${dtEnd}`, `SUMMARY:${icsText(type)}`, `DESCRIPTION:${icsText(`Department: ${department}; Minimum staffing: ${shift.minimumStaff || shift.MinimumStaff || 0}`)}`, "END:VEVENT"].join("\r\n");
-}
-
-function validateImport(data) {
-  if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("Invalid JSON export format.");
-  if (data.version && String(data.version) !== "1.0") throw new Error(`Unsupported export version: ${data.version}`);
-  if (!Array.isArray(data.employees) && !Array.isArray(data.competences)) throw new Error("JSON export must contain employees and/or competences arrays.");
-  if ((data.employees || []).length > 1000 || (data.competences || []).length > 1000) throw new Error("Import is limited to 1000 records per collection.");
-  for (const c of data.competences || []) if (!c || typeof c !== "object" || !String(c.name || "").trim()) throw new Error("Every competence must contain a name.");
-  for (const e of data.employees || []) {
-    if (!e || typeof e !== "object" || !String(e.name || "").trim() || !String(e.role || "").trim()) throw new Error("Every employee must contain a name and role.");
-    const percent = Number(e.positionPercent ?? 100);
-    if (!Number.isFinite(percent) || percent <= 0 || percent > 100) throw new Error("Employee positionPercent must be between 1 and 100.");
-  }
+function validate(payload) {
+  const errors = [];
+  if (!payload.employees.length && !payload.competences.length && !payload.shifts.length) errors.push("Ingen gjenkjennbare poster.");
+  payload.employees.forEach((e, i) => { if (!e.name || !e.role) errors.push(`Ansatt ${i + 1}: navn og rolle er påkrevd.`); if (e.positionPercent <= 0 || e.positionPercent > 100) errors.push(`Ansatt ${i + 1}: stillingsprosent må være 1–100.`); });
+  payload.competences.forEach((c, i) => { if (!c.name) errors.push(`Kompetanse ${i + 1}: navn mangler.`); });
+  payload.shifts.forEach((s, i) => { if (!s.date || !s.shiftType || s.hours <= 0 || s.minimumStaff <= 0) errors.push(`Vakt ${i + 1}: dato, type, timer og minimumsbemanning må være gyldig.`); });
+  return errors;
 }
 
 export default function DataExchange({ employees, competences, shifts, api, mutate }) {
-  function exportJson() {
-    const payload = { exportedAtUtc: new Date().toISOString(), version: "1.0", employees, competences, shifts };
-    downloadBlob(JSON.stringify(payload, null, 2), "workforce-export.json", "application/json;charset=utf-8");
-  }
-  function exportEmployees() {
-    const rows = employees.map((e) => [e.id, e.name, e.role, e.department, e.positionPercent, e.maxWeeklyHours, e.isActive]);
-    downloadBlob(rowsToCsv(["Id", "Name", "Role", "Department", "PositionPercent", "MaxWeeklyHours", "IsActive"], rows), "employees.csv", "text/csv;charset=utf-8");
-  }
-  function exportCompetences() {
-    const rows = competences.map((c) => [c.id, c.name, c.category]);
-    downloadBlob(rowsToCsv(["Id", "Name", "Category"], rows), "competences.csv", "text/csv;charset=utf-8");
-  }
-  function exportShifts() {
-    const rows = shifts.map((s) => [s.id, s.date, s.shiftType, s.department, s.startTime, s.hours, s.minimumStaff, s.overallStatus, s.competenceCoverage]);
-    downloadBlob(rowsToCsv(["Id", "Date", "ShiftType", "Department", "StartTime", "Hours", "MinimumStaff", "Status", "CompetenceCoverage"], rows), "shift-plan.csv", "text/csv;charset=utf-8");
-  }
-  function exportCalendar() {
+  const [payload, setPayload] = useState(null); const [file, setFile] = useState(null); const [format, setFormat] = useState(""); const [mode, setMode] = useState("Skip"); const [busy, setBusy] = useState(false); const [message, setMessage] = useState(""); const [error, setError] = useState("");
+  const conflicts = useMemo(() => { if (!payload) return []; const out = []; payload.employees.forEach((e) => { if (employees.some((x) => employeeKey(x) === employeeKey(e))) out.push({ type: "Ansatt", key: `${e.name} / ${e.role}` }); }); payload.competences.forEach((c) => { if (competences.some((x) => key(x.name) === key(c.name))) out.push({ type: "Kompetanse", key: c.name }); }); payload.shifts.forEach((s) => { if (shifts.some((x) => shiftKey(x) === shiftKey(s))) out.push({ type: "Vakt", key: `${s.date} ${s.startTime || ""} ${s.shiftType}` }); }); return out; }, [payload, employees, competences, shifts]);
+
+  async function inspect(selected) {
+    setBusy(true); setError(""); setMessage(""); setFile(selected); setPayload(null);
     try {
-      const body = shifts.map(shiftToIcs).join("\r\n");
-      downloadBlob(`BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Workforce Competence Management//EN\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\n${body}\r\nEND:VCALENDAR\r\n`, "shift-plan.ics", "text/calendar;charset=utf-8");
-    } catch (error) { mutate(async () => { throw error; }, "Calendar export failed."); }
+      const name = selected.name.toLowerCase(); let next;
+      if (name.endsWith(".json")) next = jsonToPayload(JSON.parse(await selected.text()));
+      else if (name.endsWith(".ics")) next = icsToPayload(await selected.text());
+      else if (name.endsWith(".csv")) next = csvToPayload(await selected.text(), name);
+      else if (name.endsWith(".xlsx") || name.endsWith(".xlsm")) {
+        const XLSX = await ensureXlsx(); const wb = XLSX.read(await selected.arrayBuffer(), { type: "array", cellDates: false }); next = { employees: [], competences: [], shifts: [] };
+        for (const sheet of wb.SheetNames) { const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheet], { header: 1, raw: false, defval: "" }); if (!rows.length) continue; const headers = rows[0].map((x) => key(x).replaceAll(" ", "")); for (const values of rows.slice(1)) { const r = Object.fromEntries(headers.map((h, i) => [h, values[i] ?? ""])); if (headers.includes("competencename") || key(sheet).includes("compet")) next.competences.push({ name: field(r, "CompetenceName", "Competence", "Name"), category: field(r, "Category") || "General" }); else if (headers.includes("date") || key(sheet).includes("shift") || key(sheet).includes("vakt")) next.shifts.push({ date: isoDate(field(r, "Date")), startTime: clock(field(r, "StartTime", "Start")), shiftType: field(r, "ShiftType", "Shift", "Type") || "Shift", department: field(r, "Department"), hours: num(field(r, "Hours"), 8), minimumStaff: num(field(r, "MinimumStaff", "Minimum"), 1), isCritical: key(field(r, "IsCritical")) === "true", isPublished: false }); else next.employees.push({ name: field(r, "Name", "Employee", "EmployeeName"), role: field(r, "Role", "Position", "JobTitle"), department: field(r, "Department"), authorization: field(r, "Authorization"), positionPercent: num(field(r, "PositionPercent", "Percent"), 100), maxWeeklyHours: num(field(r, "MaxWeeklyHours", "WeeklyHours"), 37.5), isActive: key(field(r, "IsActive")) !== "false" }); } }
+      } else throw new Error("Formatet støttes ikke. Bruk CSV, Excel, JSON eller ICS.");
+      const errors = validate(next); if (errors.length) throw new Error(errors.slice(0, 10).join(" ")); setPayload(next); setFormat(name.endsWith("xlsx") || name.endsWith("xlsm") ? "Excel" : name.endsWith("json") ? "JSON" : name.endsWith("ics") ? "ICS" : "CSV"); setMessage("Format gjenkjent. Mapping foreslått. Ingenting er lagret ennå.");
+    } catch (e) { setError(e.message || "Kunne ikke lese filen."); } finally { setBusy(false); }
   }
-  function exportHtml() {
-    const rows = shifts.map((s) => `<tr><td>${htmlCell(s.date)}</td><td>${htmlCell(s.shiftType)}</td><td>${htmlCell(s.department)}</td><td>${htmlCell(s.minimumStaff)}</td><td>${htmlCell(s.overallStatus)}</td><td>${htmlCell(s.competenceCoverage)}%</td></tr>`).join("");
-    const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Workforce shift plan</title><meta name="robots" content="noindex,nofollow"><style>body{font-family:system-ui;margin:32px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:8px;text-align:left}th{background:#eee}</style></head><body><h1>Workforce shift plan</h1><p>Generated ${htmlCell(new Date().toLocaleString())}</p><table><thead><tr><th>Date</th><th>Shift</th><th>Department</th><th>Minimum staff</th><th>Status</th><th>Competence coverage</th></tr></thead><tbody>${rows}</tbody></table></body></html>`;
-    downloadBlob(html, "shift-plan.html", "text/html;charset=utf-8");
+
+  async function confirmImport() {
+    if (!payload) return; setBusy(true); setError("");
+    try { const result = await api.migrationImport({ ...payload, mode, sourceFileName: file?.name || "manual" }); setMessage(`Import fullført: ${result.created} opprettet, ${result.updated} oppdatert, ${result.skipped} hoppet over. ${result.conflicts?.length || 0} konflikter ble ikke skrevet.`); setPayload(null); setFile(null); await mutate(async () => {}, "Migrering fullført."); } catch (e) { setError(e.message || "Import feilet. Databasen ble rullet tilbake."); } finally { setBusy(false); }
   }
-  async function importJson(file) {
-    if (file.size > 5 * 1024 * 1024) throw new Error("Import file is limited to 5 MB.");
-    const data = JSON.parse(await file.text());
-    validateImport(data);
-    const competenceByName = new Map(competences.map((c) => [String(c.name).trim().toLowerCase(), c]));
-    const employeeByKey = new Map(employees.map((e) => [`${e.name}|${e.role}`.toLowerCase(), e]));
-    let created = 0; let skipped = 0;
-    for (const c of data.competences || []) {
-      const name = String(c.name).trim();
-      if (competenceByName.has(name.toLowerCase())) { skipped += 1; continue; }
-      const createdCompetence = await api.createCompetence({ name, category: String(c.category || "General").trim() });
-      competenceByName.set(name.toLowerCase(), createdCompetence); created += 1;
-    }
-    for (const e of data.employees || []) {
-      const name = String(e.name).trim(); const role = String(e.role).trim(); const key = `${name}|${role}`.toLowerCase();
-      if (employeeByKey.has(key)) { skipped += 1; continue; }
-      const createdEmployee = await api.createEmployee({ name, role, positionPercent: Number(e.positionPercent ?? 100), maxWeeklyHours: e.maxWeeklyHours == null ? null : parseHours(e.maxWeeklyHours) });
-      employeeByKey.set(key, createdEmployee); created += 1;
-      for (const competence of e.competences || []) {
-        const target = competenceByName.get(String(competence.name || "").trim().toLowerCase());
-        if (target) await api.setEmployeeCompetence(createdEmployee.id, { competenceId: target.id, level: competence.level || "Basic", validUntil: competence.validUntil || null });
-      }
-    }
-    await mutate(async () => {}, `JSON import complete: ${created} created, ${skipped} skipped. Shift assignments are not restored automatically.`);
+
+  async function exportExcel() {
+    setBusy(true); setError(""); try { const XLSX = await ensureXlsx(); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(employees), "Employees"); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(competences), "Competences"); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(shifts), "Shifts"); XLSX.writeFile(wb, "workforce-backup.xlsx"); } catch (e) { setError(e.message); } finally { setBusy(false); }
   }
-  async function importCsv(file) {
-    if (file.size > 5 * 1024 * 1024) throw new Error("Import file is limited to 5 MB.");
-    const rows = parseCsv(await file.text());
-    if (rows.length > 1000) throw new Error("CSV import is limited to 1000 rows.");
-    const name = file.name.toLowerCase();
-    const looksLikeCompetence = name.includes("compet") || rows.some((row) => firstValue(row, "category") && !firstValue(row, "role"));
-    let created = 0; let skipped = 0;
-    if (looksLikeCompetence) {
-      const existing = new Set(competences.map((c) => c.name.trim().toLowerCase()));
-      for (const row of rows) {
-        const competenceName = firstValue(row, "name", "competence", "competencename");
-        if (!competenceName) throw new Error("Competence CSV requires a Name/Competence column.");
-        if (existing.has(competenceName.toLowerCase())) { skipped += 1; continue; }
-        await api.createCompetence({ name: competenceName, category: firstValue(row, "category", "type") || "General" });
-        existing.add(competenceName.toLowerCase()); created += 1;
-      }
-    } else {
-      const existing = new Set(employees.map((e) => `${e.name}|${e.role}`.trim().toLowerCase()));
-      for (const row of rows) {
-        const employeeName = firstValue(row, "name", "employee", "employeename");
-        const role = firstValue(row, "role", "position", "jobtitle");
-        if (!employeeName || !role) throw new Error("Employee CSV requires Name and Role columns.");
-        const key = `${employeeName}|${role}`.trim().toLowerCase();
-        if (existing.has(key)) { skipped += 1; continue; }
-        await api.createEmployee({ name: employeeName, role, positionPercent: parsePercent(firstValue(row, "positionpercent", "percentage", "percent")), maxWeeklyHours: parseHours(firstValue(row, "maxweeklyhours", "weeklyhours", "hoursperweek")) });
-        existing.add(key); created += 1;
-      }
-    }
-    await mutate(async () => {}, `CSV import complete: ${created} created, ${skipped} skipped.`);
-  }
-  function handleImport(event) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    const promise = file.name.toLowerCase().endsWith(".json") ? importJson(file) : importCsv(file);
-    promise.catch((error) => mutate(async () => { throw error; }, error.message || "Import failed."));
-    event.target.value = "";
-  }
-  const secondary = "primary-button secondary";
-  return (
-    <section>
-      <div className="page-heading"><div><div className="kicker">Operations</div><h1>Data & Reports</h1><p>Export operational data for analysis, sharing, migration and calendar use.</p></div></div>
-      <div className="management-columns">
-        <article className="panel"><div className="panel-heading"><div><h2>Exports</h2><p>Browser-side files from the current authenticated dataset.</p></div></div><div className="card-actions">
-          <button className="primary-button" onClick={exportJson}>JSON export</button><button className={secondary} onClick={exportEmployees}>Employees CSV</button><button className={secondary} onClick={exportCompetences}>Competence CSV</button><button className={secondary} onClick={exportShifts}>Shift plan CSV</button><button className={secondary} onClick={exportCalendar}>Calendar ICS</button><button className={secondary} onClick={exportHtml}>Share HTML</button><button className={secondary} onClick={() => window.print()}>Print / PDF</button>
-        </div><p className="muted">Exports contain operational employee data. Treat downloaded files as confidential and store them only in approved locations.</p></article>
-        <article className="panel"><div className="panel-heading"><div><h2>Import</h2><p>CSV and JSON import with duplicate protection.</p></div></div><p>CSV accepts comma- or semicolon-separated files. Employee imports require Name and Role. Competence imports require Name/Competence and optionally Category. Existing records with the same employee name + role or competence name are skipped. JSON also restores employee competence links when the exported competence names exist.</p><label className={secondary} htmlFor="data-import">Choose CSV or JSON</label><input id="data-import" type="file" accept=".csv,.json,text/csv,application/json" onChange={handleImport} hidden /></article>
-      </div>
-      <article className="panel" style={{ marginTop: 16 }}><div className="panel-heading"><div><h2>Current dataset</h2><p>Records currently loaded from the API.</p></div></div><div className="metrics"><div className="metric-card"><strong>{employees.length}</strong><small>employees</small></div><div className="metric-card"><strong>{competences.length}</strong><small>competences</small></div><div className="metric-card"><strong>{shifts.length}</strong><small>shifts</small></div></div></article>
-    </section>
-  );
+  function exportJson() { const blob = new Blob([JSON.stringify({ version: "vaktklar-backup-2", exportedAtUtc: new Date().toISOString(), employees, competences, shifts }, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "workforce-backup.json"; a.click(); URL.revokeObjectURL(url); }
+  function exportIcs() { const events = shifts.map((s) => { const start = new Date(`${s.date}T${s.startTime || "08:00"}:00`); const end = new Date(start.getTime() + Number(s.hours || 8) * 3600000); const fmt = (d) => `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}T${String(d.getHours()).padStart(2,"0")}${String(d.getMinutes()).padStart(2,"0")}00`; return `BEGIN:VEVENT\r\nUID:workforce-${s.id}@vaktklar\r\nDTSTART:${fmt(start)}\r\nDTEND:${fmt(end)}\r\nSUMMARY:${s.shiftType || "Shift"}\r\nDESCRIPTION:Department: ${s.department || ""}; Minimum staffing: ${s.minimumStaff || 0}\r\nEND:VEVENT`; }).join("\r\n"); const blob = new Blob([`BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Vaktklar//EN\r\n${events}\r\nEND:VCALENDAR\r\n`], { type: "text/calendar" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "shift-plan.ics"; a.click(); URL.revokeObjectURL(url); }
+
+  return <section>
+    <div className="page-heading"><div><div className="kicker">Operations</div><h1>Data & Migrering 2.0</h1><p>Import, mapping, forhåndsvisning, validering, konflikter og eksport i én arbeidsflyt.</p></div></div>
+    {error && <div className="note" role="alert"><strong>Feil:</strong> {error}</div>}{message && <div className="note verified"><strong>Status:</strong> {message}</div>}
+    <div className="management-columns">
+      <article className="panel"><div className="panel-heading"><div><h2>IMPORT</h2><p>Ingen data skrives før bekreftelse.</p></div></div>
+        <label className="primary-button">Last opp fil<input hidden type="file" accept=".csv,.xlsx,.xlsm,.json,.ics" onChange={(e) => e.target.files?.[0] && inspect(e.target.files[0])} /></label>
+        <div className="chips"><span className="chip">CSV</span><span className="chip">Excel (.xlsx)</span><span className="chip">JSON</span><span className="chip">ICS</span><span className="chip">Egendefinert fil</span></div>
+        {busy && <p className="muted">Behandler …</p>}
+        {payload && <div className="import-wizard"><div className="note"><strong>1–5:</strong> {format} gjenkjent · felter lest · mapping foreslått · forhåndsvisning · validering OK.</div>
+          <div className="metrics"><div className="metric"><strong>{payload.employees.length}</strong><span>ansatte</span></div><div className="metric"><strong>{payload.competences.length}</strong><span>kompetanser</span></div><div className="metric"><strong>{payload.shifts.length}</strong><span>vakter</span></div><div className="metric"><strong>{conflicts.length}</strong><span>konflikter</span></div></div>
+          <label>Konfliktbehandling<select value={mode} onChange={(e) => setMode(e.target.value)}><option value="Skip">Hopp over</option><option value="Update">Oppdater</option><option value="Create">Ikke opprett ved konflikt</option></select></label>
+          {conflicts.length > 0 && <div className="table-wrap"><table><thead><tr><th>Type</th><th>Konflikt</th><th>Valg</th></tr></thead><tbody>{conflicts.slice(0, 100).map((c, i) => <tr key={`${c.type}-${c.key}-${i}`}><td>{c.type}</td><td>{c.key}</td><td>{mode === "Skip" ? "Hopp over" : mode === "Update" ? "Oppdater" : "Stopp ved konflikt"}</td></tr>)}</tbody></table></div>}
+          <div className="note"><strong>9.</strong> Importen sendes til backend som én batch. EF Core bruker én database-transaksjon; feil ruller hele batchen tilbake. Migreringen logges i auditloggen.</div>
+          <div className="card-actions"><button className="primary-button" disabled={busy} onClick={confirmImport}>Bekreft og importer</button><button className="primary-button secondary" onClick={() => { setPayload(null); setFile(null); }}>Avbryt</button></div>
+        </div>}
+      </article>
+      <article className="panel"><div className="panel-heading"><div><h2>EKSPORT</h2><p>Backup, migrering og deling.</p></div></div>
+        <div className="card-actions"><button className="primary-button" onClick={exportJson}>Komplett systembackup · JSON</button><button className="primary-button secondary" onClick={exportExcel}>Komplett systembackup · Excel</button><button className="primary-button secondary" onClick={() => api.download("/api/export/employees.csv")}>Ansatte · CSV</button><button className="primary-button secondary" onClick={() => api.download("/api/export/competences.csv")}>Ansatt + kompetanse · CSV</button><button className="primary-button secondary" onClick={() => api.download("/api/export/shifts.xls")}>Vaktplan · Excel</button><button className="primary-button secondary" onClick={exportIcs}>Vaktplan · ICS</button><button className="primary-button secondary" onClick={() => api.download("/api/share/shiftplan")}>Vaktplan · HTML</button><button className="primary-button secondary" onClick={() => window.print()}>PDF / utskrift</button></div>
+        <ul className="checks"><li>Ansatt + kompetanse gir grunnlag for kompetansematrise.</li><li>Excel-eksport har egne ark for Employees, Competences og Shifts.</li><li>JSON-backup kan importeres tilbake gjennom samme migreringsflyt.</li><li>ICS kan importeres som vakter.</li><li>Migreringsresultatet lagres som audit-event.</li></ul>
+      </article>
+    </div>
+  </section>;
 }
