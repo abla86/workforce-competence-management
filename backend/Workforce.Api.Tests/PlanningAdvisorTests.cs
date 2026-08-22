@@ -30,39 +30,39 @@ public sealed class PlanningAdvisorTests
     }
 
     [Fact]
-    public void CandidateWithInsufficientRestBeforeShiftIsRejected()
+    public void CandidateWithInsufficientRestBeforeShiftIsWarning_NotHardFailure()
     {
         var employee = new Employee { Id = 10, Name = "Candidate", IsActive = true, PositionPercent = 100m };
         var target = new Shift { Id = 2, Date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1)), StartTime = new TimeOnly(7, 0), Hours = 8, MinimumStaff = 1 };
         var existing = new Shift { Id = 1, Date = target.Date.AddDays(-1), StartTime = new TimeOnly(18, 0), Hours = 8, MinimumStaff = 1,
             Assignments = [new ShiftAssignment { EmployeeId = 10, Employee = employee }] };
         var result = new PlanningAdvisor().RankCandidates(target, [employee], [existing, target]).Single();
-        Assert.False(result.Eligible);
-        Assert.Contains(result.HardFailures, x => x.Contains("11-timers hvile"));
+        Assert.True(result.Eligible);
+        Assert.Contains(result.Warnings, x => x.Contains("Kort hvile"));
     }
 
     [Fact]
-    public void CandidateWithInsufficientRestAfterShiftIsRejected()
+    public void CandidateWithInsufficientRestAfterShiftIsWarning_NotHardFailure()
     {
         var employee = new Employee { Id = 10, Name = "Candidate", IsActive = true, PositionPercent = 100m };
         var target = new Shift { Id = 2, Date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(1)), StartTime = new TimeOnly(7, 0), Hours = 8, MinimumStaff = 1 };
         var existing = new Shift { Id = 3, Date = target.Date, StartTime = new TimeOnly(20, 0), Hours = 8, MinimumStaff = 1,
             Assignments = [new ShiftAssignment { EmployeeId = 10, Employee = employee }] };
         var result = new PlanningAdvisor().RankCandidates(target, [employee], [existing, target]).Single();
-        Assert.False(result.Eligible);
-        Assert.Contains(result.HardFailures, x => x.Contains("etter vakten"));
+        Assert.True(result.Eligible);
+        Assert.Contains(result.Warnings, x => x.Contains("Kort hvile"));
     }
 
     [Fact]
-    public void CandidateExceedingWeeklyHoursIsRejected()
+    public void CandidateOverContractHoursIsWarning_NotHardFailure()
     {
-        var employee = new Employee { Id = 10, Name = "Candidate", IsActive = true, PositionPercent = 100m, MaxWeeklyHours = 20m };
+        var employee = new Employee { Id = 10, Name = "Candidate", IsActive = true, PositionPercent = 50m, MaxWeeklyHours = 37.5m };
         var target = new Shift { Id = 2, Date = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(2)), Hours = 8, MinimumStaff = 1 };
         var existing = new Shift { Id = 1, Date = target.Date.AddDays(-1), Hours = 16, MinimumStaff = 1,
             Assignments = [new ShiftAssignment { EmployeeId = 10, Employee = employee }] };
         var result = new PlanningAdvisor().RankCandidates(target, [employee], [existing, target]).Single();
-        Assert.False(result.Eligible);
-        Assert.Contains(result.HardFailures, x => x.Contains("Ukegrense"));
+        Assert.True(result.Eligible);
+        Assert.Contains(result.Warnings, x => x.Contains("stillingsomfang"));
     }
 
     [Fact]
