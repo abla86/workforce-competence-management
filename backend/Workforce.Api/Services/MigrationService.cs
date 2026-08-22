@@ -67,9 +67,11 @@ public sealed class MigrationService
                 foreach (var ec in source.Competences ?? [])
                 {
                     if (!competenceMap.TryGetValue(Normalize(ec.Name), out var competence)) { conflicts.Add(new("EmployeeCompetence", $"{source.Name}/{ec.Name}", "Kompetansen finnes ikke")); continue; }
+                    var level = ParseLevel(ec.Level);
+                    if (level is null) { conflicts.Add(new("EmployeeCompetence", $"{source.Name}/{ec.Name}", "Ugyldig kompetansenivå")); continue; }
                     var existing = await _db.EmployeeCompetences.FindAsync([employee.Id, competence.Id], cancellationToken);
-                    if (existing is null) _db.EmployeeCompetences.Add(new EmployeeCompetence { EmployeeId = employee.Id, CompetenceId = competence.Id, Level = ec.Level, ValidUntil = ec.ValidUntil });
-                    else if (mode == MigrationConflictMode.Update) { existing.Level = ec.Level; existing.ValidUntil = ec.ValidUntil; }
+                    if (existing is null) _db.EmployeeCompetences.Add(new EmployeeCompetence { EmployeeId = employee.Id, CompetenceId = competence.Id, Level = level.Value, ValidUntil = ec.ValidUntil });
+                    else if (mode == MigrationConflictMode.Update) { existing.Level = level.Value; existing.ValidUntil = ec.ValidUntil; }
                 }
             }
 
@@ -112,46 +114,34 @@ public sealed class MigrationService
         foreach (var requirement in source.Requirements ?? [])
         {
             if (!competences.TryGetValue(Normalize(requirement.CompetenceName), out var competence)) continue;
+            var level = ParseLevel(requirement.MinimumLevel); if (level is null) continue;
             var existing = await _db.ShiftRequirements.FindAsync([shift.Id, competence.Id], cancellationToken);
-            if (existing is null) _db.ShiftRequirements.Add(new ShiftRequirement { ShiftId = shift.Id, CompetenceId = competence.Id, MinimumCount = requirement.MinimumCount, MinimumLevel = requirement.MinimumLevel, RequiredRole = requirement.RequiredRole, IsCritical = requirement.IsCritical });
-            else { existing.MinimumCount = requirement.MinimumCount; existing.MinimumLevel = requirement.MinimumLevel; existing.RequiredRole = requirement.RequiredRole; existing.IsCritical = requirement.IsCritical; }
+            if (existing is null) _db.ShiftRequirements.Add(new ShiftRequirement { ShiftId = shift.Id, CompetenceId = competence.Id, MinimumCount = requirement.MinimumCount, MinimumLevel = level.Value, RequiredRole = requirement.RequiredRole, IsCritical = requirement.IsCritical });
+            else { existing.MinimumCount = requirement.MinimumCount; existing.MinimumLevel = level.Value; existing.RequiredRole = requirement.RequiredRole; existing.IsCritical = requirement.IsCritical; }
         }
     }
 
+    private static CompetenceLevel? ParseLevel(string? value) => Enum.TryParse<CompetenceLevel>(value, true, out var level) ? level : null;
     private static string EmployeeKey(string name, string role) => $"{Normalize(name)}|{Normalize(role)}";
     private static string ShiftKey(DateOnly date, TimeOnly? start, string type, string? department) => $"{date:yyyy-MM-dd}|{(start.HasValue ? start.Value.ToString("HH:mm") : "")}|{Normalize(type)}|{Normalize(department ?? "")}";
     private static string Normalize(string? value) => (value ?? "").Trim().ToLowerInvariant();
 
     public static IReadOnlyList<IReadOnlyList<string>> ReadExcel(Stream stream, CancellationToken cancellationToken = default)
     {
-        using var document = SpreadsheetDocument.Open(stream, false);
-        var workbook = document.WorkbookPart ?? throw new InvalidDataException("Excel workbook has no workbook part.");
-        var sharedStrings = workbook.SharedStringTablePart?.SharedStringTable;
-        var result = new List<IReadOnlyList<string>>();
-        foreach (var sheet in workbook.Workbook.Sheets!.Elements<Sheet>())
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var part = (WorksheetPart)workbook.GetPartById(sheet.Id!);
-            var rows = part.Worksheet.GetFirstChild<SheetData>()?.Elements<Row>() ?? [];
-            foreach (var row in rows) result.Add(new[] { $"__SHEET__:{sheet.Name}" }.Concat(row.Elements<Cell>().Select(cell => GetCellValue(cell, sharedStrings))).ToList());
-        }
+        using var document = SpreadsheetDocument.Open(stream, false); var workbook = document.WorkbookPart ?? throw new InvalidDataException("Excel workbook has no workbook part."); var sharedStrings = workbook.SharedStringTablePart?.SharedStringTable; var result = new List<IReadOnlyList<string>>();
+        foreach (var sheet in workbook.Workbook.Sheets!.Elements<Sheet>()) { cancellationToken.ThrowIfCancellationRequested(); var part = (WorksheetPart)workbook.GetPartById(sheet.Id!); var rows = part.Worksheet.GetFirstChild<SheetData>()?.Elements<Row>() ?? []; foreach (var row in rows) result.Add(new[] { $"__SHEET__:{sheet.Name}" }.Concat(row.Elements<Cell>().Select(cell => GetCellValue(cell, sharedStrings))).ToList()); }
         return result;
     }
 
-    private static string GetCellValue(Cell cell, SharedStringTable? sharedStrings)
-    {
-        var value = cell.CellValue?.Text ?? cell.InnerText ?? "";
-        if (cell.DataType?.Value == CellValues.SharedString && int.TryParse(value, out var index) && sharedStrings is not null) return sharedStrings.Elements<SharedStringItem>().ElementAtOrDefault(index)?.InnerText ?? "";
-        return value;
-    }
+    private static string GetCellValue(Cell cell, SharedStringTable? sharedStrings) { var value = cell.CellValue?.Text ?? cell.InnerText ?? ""; if (cell.DataType?.Value == CellValues.SharedString && int.TryParse(value, out var index) && sharedStrings is not null) return sharedStrings.Elements<SharedStringItem>().ElementAtOrDefault(index)?.InnerText ?? ""; return value; }
 }
 
 public enum MigrationConflictMode { Skip, Update, Create }
 public sealed record MigrationImportRequest(List<MigrationEmployee> Employees, List<MigrationCompetence> Competences, List<MigrationShift> Shifts, string Mode = "Skip", string? SourceFileName = null);
 public sealed record MigrationEmployee(string Name, string Role, string? Department, string? Authorization, decimal? PositionPercent, decimal? MaxWeeklyHours, bool IsActive = true, List<MigrationEmployeeCompetence>? Competences = null);
-public sealed record MigrationEmployeeCompetence(string Name, CompetenceLevel Level, DateOnly? ValidUntil);
+public sealed record MigrationEmployeeCompetence(string Name, string Level, DateOnly? ValidUntil);
 public sealed record MigrationCompetence(string Name, string? Category);
 public sealed record MigrationShift(DateOnly Date, TimeOnly? StartTime, string ShiftType, string? Department, decimal Hours, int MinimumStaff, bool IsCritical, bool IsPublished, List<string>? Assignments = null, List<MigrationRequirement>? Requirements = null);
-public sealed record MigrationRequirement(string CompetenceName, int MinimumCount, CompetenceLevel MinimumLevel, string? RequiredRole, bool IsCritical);
+public sealed record MigrationRequirement(string CompetenceName, int MinimumCount, string MinimumLevel, string? RequiredRole, bool IsCritical);
 public sealed record MigrationConflict(string Type, string Key, string Reason);
 public sealed record MigrationImportResult(int Created, int Updated, int Skipped, IReadOnlyList<MigrationConflict> Conflicts, bool Committed);
