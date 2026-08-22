@@ -6,26 +6,29 @@ namespace Workforce.Api.Data;
 public static class SeedData
 {
     private const string DemoUsername = "demo";
-    private const string DemoPassword = "VaktklarDemo2026!";
 
     public static async Task InitializeAsync(AppDbContext db)
     {
         if (string.Equals(Environment.GetEnvironmentVariable("DEMO_MODE"), "true", StringComparison.OrdinalIgnoreCase))
         {
+            var demoPassword = Environment.GetEnvironmentVariable("DEMO_PASSWORD");
+            if (string.IsNullOrWhiteSpace(demoPassword) || demoPassword.Length < 12)
+                throw new InvalidOperationException("DEMO_PASSWORD must be configured with at least 12 characters when DEMO_MODE=true.");
+
             var demoUser = await db.UserAccounts.SingleOrDefaultAsync(x => x.Username == DemoUsername);
             if (demoUser is null)
             {
                 db.UserAccounts.Add(new UserAccount
                 {
                     Username = DemoUsername,
-                    PasswordHash = BCrypt.Net.BCrypt.HashPassword(DemoPassword, 12),
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword(demoPassword, 12),
                     Role = "Admin",
                     IsActive = true
                 });
             }
             else
             {
-                demoUser.PasswordHash = BCrypt.Net.BCrypt.HashPassword(DemoPassword, 12);
+                demoUser.PasswordHash = BCrypt.Net.BCrypt.HashPassword(demoPassword, 12);
                 demoUser.Role = "Admin";
                 demoUser.IsActive = true;
                 demoUser.FailedLoginAttempts = 0;
