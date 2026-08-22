@@ -13,9 +13,10 @@ public static class SeedData
         if (!migrations.Any())
             await db.Database.EnsureCreatedAsync();
 
-        // The prototype must be immediately usable after a clean Docker start.
-        // This demo account is intentionally local/demo-only; do not reuse it in production.
-        if (!await db.UserAccounts.AnyAsync())
+        // The demo account is created only when explicitly running in demo mode.
+        // Production deployments must bootstrap their own administrator account.
+        var demoMode = string.Equals(Environment.GetEnvironmentVariable("DEMO_MODE"), "true", StringComparison.OrdinalIgnoreCase);
+        if (demoMode && !await db.UserAccounts.AnyAsync())
         {
             db.UserAccounts.Add(new UserAccount
             {
