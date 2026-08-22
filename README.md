@@ -170,18 +170,10 @@ See [docs/TEST-MATRIX.md](docs/TEST-MATRIX.md).
 
 ## Run locally
 
-Create `.env` from `.env.example` with non-production development values for:
+For a full local verification, use the repository's single verification script. It resets to the current `main`, restores/builds/tests the backend, validates the EF model against the checked-in migration snapshot, validates the frontend, rebuilds the Docker stack, waits for SQL Server/API/frontend health and prints the local URLs only after those checks pass.
 
-- `DB_PASSWORD`
-- `JWT_SECRET_KEY`
-- `VAKTKLAR_BOOTSTRAP_KEY`
-- `SECURITY_COOKIE_SECURE=false`
-
-Then:
-
-```bash
-docker compose down -v
-docker compose up --build
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\verify-local-stack.ps1"
 ```
 
 The API applies the checked-in EF Core migration before seeding the demo database.
