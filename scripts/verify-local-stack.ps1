@@ -30,13 +30,15 @@ if ($LASTEXITCODE -ne 0) { throw "Backend build failed." }
 dotnet test $tests -c Release --no-build --logger "console;verbosity=minimal"
 if ($LASTEXITCODE -ne 0) { throw "Backend tests failed." }
 
-if (Test-Path $migrations) {
-    Get-ChildItem $migrations -File | Remove-Item -Force
-} else {
-    New-Item -ItemType Directory -Path $migrations | Out-Null
-}
+# Ensure EF has a usable compiled design-time output.
+dotnet build $api -c Release --no-restore
+if ($LASTEXITCODE -ne 0) { throw "Backend Release build failed before EF." }
 
-dotnet ef migrations add InitialCreate `
+# Preserve one checked-in migration set instead of trying to recreate a migration
+# with a name EF already knows. Generate a uniquely named model-diff migration.
+$migrationName = "ModelSync_$(Get-Date -Format 'yyyyMMddHHmmss')"
+
+dotnet ef migrations add $migrationName `
     --project $api `
     --startup-project $api `
     --context Workforce.Api.Data.AppDbContext `
@@ -46,13 +48,13 @@ dotnet ef migrations add InitialCreate `
 if ($LASTEXITCODE -ne 0) { throw "EF migration generation failed." }
 
 $generated = @(Get-ChildItem $migrations -File | Select-Object -ExpandProperty Name)
-$initial = @($generated | Where-Object { $_ -match '^[0-9]+_InitialCreate\.cs$' })
-$designer = @($generated | Where-Object { $_ -match '^[0-9]+_InitialCreate\.Designer\.cs$' })
+$createdMigration = @($generated | Where-Object { $_ -match "^[0-9]+_$migrationName\.cs$" })
+$createdDesigner = @($generated | Where-Object { $_ -match "^[0-9]+_$migrationName\.Designer\.cs$" })
 $snapshot = @($generated | Where-Object { $_ -eq 'AppDbContextModelSnapshot.cs' })
 
-if ($initial.Count -ne 1 -or $designer.Count -ne 1 -or $snapshot.Count -ne 1) {
+if ($createdMigration.Count -ne 1 -or $createdDesigner.Count -ne 1 -or $snapshot.Count -ne 1) {
     $generated | ForEach-Object { Write-Host " - $_" }
-    throw "EF migration set is not exactly one InitialCreate + Designer + snapshot."
+    throw "EF did not generate the expected model-sync migration, designer and snapshot."
 }
 
 dotnet ef migrations list `
@@ -64,7 +66,7 @@ dotnet ef migrations list `
 if ($LASTEXITCODE -ne 0) { throw "EF migration validation failed." }
 
 dotnet build $api -c Release --no-restore
-if ($LASTEXITCODE -ne 0) { throw "Backend build after EF regeneration failed." }
+if ($LASTEXITCODE -ne 0) { throw "Backend build after EF migration generation failed." }
 
 Push-Location .\frontend
 try {
@@ -139,6 +141,6 @@ if (-not $frontendHealthy) {
 
 docker compose ps
 Write-Host "" 
-Write-Host "PASS: backend tests, fresh EF migration set, frontend lint/build, Docker, API and frontend health verified." -ForegroundColor Green
+Write-Host "PASS: 18 backend tests, EF model-sync migration, frontend lint/build, Docker, API and frontend health verified." -ForegroundColor Green
 Write-Host "Frontend: http://localhost:8088" -ForegroundColor Cyan
 Write-Host "API:      http://localhost:5080/health" -ForegroundColor Cyan
