@@ -36,7 +36,7 @@ namespace Workforce.Api.Migrations
                 {
                     Id = table.Column<int>(type: "int", nullable: false)
                         .Annotation("SqlServer:Identity", "1, 1"),
-                    Name = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    Name = table.Column<string>(type: "nvarchar(255)", maxLength: 255, nullable: false),
                     Category = table.Column<string>(type: "nvarchar(max)", nullable: false)
                 },
                 constraints: table =>
@@ -236,12 +236,6 @@ namespace Workforce.Api.Migrations
                 name: "IX_ShiftRequirements_CompetenceId",
                 table: "ShiftRequirements",
                 column: "CompetenceId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_UserAccounts_Username",
-                table: "UserAccounts",
-                column: "Username",
-                unique: true);
         }
 
         /// <inheritdoc />
