@@ -47,6 +47,8 @@ services:
       context: ./frontend
     environment:
       VITE_DEMO_AUTO_LOGIN: "true"
+      VITE_DEMO_USERNAME: "demo"
+      VITE_DEMO_PASSWORD: "${DEMO_PASSWORD:?Set DEMO_PASSWORD in .env}"
     ports:
       - "8088:80"
     depends_on:
