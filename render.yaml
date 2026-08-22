@@ -1,0 +1,88 @@
+# Render Blueprint for the portfolio/demo deployment.
+# The SQL Server service is intentionally a private, persistent demo datastore.
+# It uses SQL Server Developer Edition and must not be used for production data.
+
+services:
+  - type: pserv
+    name: workforce-sql
+    runtime: image
+    plan: standard
+    region: frankfurt
+    image:
+      url: mcr.microsoft.com/mssql/server:2022-latest
+    envVars:
+      - key: ACCEPT_EULA
+        value: "Y"
+      - key: MSSQL_PID
+        value: Developer
+      - key: MSSQL_TCP_PORT
+        value: "1433"
+      - key: MSSQL_SA_PASSWORD
+        generateValue: true
+    disk:
+      name: workforce-sql-data
+      mountPath: /var/opt/mssql
+      sizeGB: 10
+
+  - type: web
+    name: workforce-api
+    runtime: docker
+    plan: starter
+    region: frankfurt
+    dockerfilePath: ./backend/Workforce.Api/Dockerfile
+    dockerContext: ./backend/Workforce.Api
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "10000"
+      - key: ASPNETCORE_URLS
+        value: http://+:10000
+      - key: DB_HOST
+        fromService:
+          type: pserv
+          name: workforce-sql
+          property: host
+      - key: DB_PASSWORD
+        fromService:
+          type: pserv
+          name: workforce-sql
+          envVarKey: MSSQL_SA_PASSWORD
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: VAKTKLAR_BOOTSTRAP_KEY
+        generateValue: true
+      - key: SECURITY_COOKIE_SECURE
+        value: "true"
+      - key: Cors__Origins__0
+        fromService:
+          type: web
+          name: workforce-frontend
+          envVarKey: RENDER_EXTERNAL_URL
+    dockerCommand: >-
+      bash -c 'until (echo > /dev/tcp/$DB_HOST/1433) 2>/dev/null; do sleep 2; done;
+      export ConnectionStrings__DefaultConnection="Server=$DB_HOST,1433;Database=WorkforceCompetenceDb;User Id=sa;Password=$DB_PASSWORD;TrustServerCertificate=True";
+      exec dotnet Workforce.Api.dll'
+    initialDeployHook: >-
+      bash -c 'curl -fsS -X POST "$RENDER_EXTERNAL_URL/api/auth/bootstrap"
+      -H "Content-Type: application/json"
+      -d "{\"bootstrapKey\":\"$VAKTKLAR_BOOTSTRAP_KEY\",\"username\":\"demo\",\"password\":\"WorkforceDemo2026!\"}"'
+
+  - type: web
+    name: workforce-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    region: frankfurt
+    envVars:
+      - key: VITE_API_URL
+        fromService:
+          type: web
+          name: workforce-api
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: VITE_DEMO_AUTO_LOGIN
+        value: "true"
+      - key: VITE_DEMO_USERNAME
+        value: demo
+      - key: VITE_DEMO_PASSWORD
+        value: WorkforceDemo2026!
