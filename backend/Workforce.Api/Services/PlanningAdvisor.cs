@@ -38,17 +38,13 @@ public sealed class PlanningAdvisor
                 var existingStart = SchedulingRules.GetStart(existing);
                 var existingEnd = SchedulingRules.GetEnd(existing);
 
+                // Rest is a compliance warning, not an automatic block. Some healthcare
+                // schedules can use lawful agreements/dispensations and compensatory rest.
                 if (existingEnd <= shiftStart && (shiftStart - existingEnd).TotalHours < 11)
-                {
-                    hardFailures.Add("Mulig brudd på 11-timers hvile før vakten");
-                    break;
-                }
+                    warnings.Add($"Kort hvile før vakten ({(shiftStart - existingEnd).TotalHours:F1}t)");
 
                 if (existingStart >= shiftEnd && (existingStart - shiftEnd).TotalHours < 11)
-                {
-                    hardFailures.Add("Mulig brudd på 11-timers hvile etter vakten");
-                    break;
-                }
+                    warnings.Add($"Kort hvile etter vakten ({(existingStart - shiftEnd).TotalHours:F1}t)");
             }
 
             foreach (var requirement in shift.Requirements)
@@ -73,22 +69,51 @@ public sealed class PlanningAdvisor
                     hardFailures.Add($"Feil rolle for {requirement.Competence.Name}");
             }
 
-            var assignedHours = allShifts
+            // Contract hours are derived from employment percentage unless a lower
+            // configured maximum has been supplied. Planned hours above the contract
+            // are surfaced as overtime risk, but are not silently treated as illegal.
+            var contractualWeeklyHours = employee.PositionPercent > 0
+                ? Math.Min(employee.MaxWeeklyHours > 0 ? employee.MaxWeeklyHours : 37.5m,
+                    37.5m * employee.PositionPercent / 100m)
+                : 0m;
+
+            var weekStart = shift.Date.AddDays(-(int)shift.Date.DayOfWeek + (int)DayOfWeek.Monday);
+            if (shift.Date.DayOfWeek == DayOfWeek.Sunday)
+                weekStart = shift.Date.AddDays(-6);
+            var weekEnd = weekStart.AddDays(6);
+
+            var scheduledHours = allShifts
+                .Where(s => s.Date >= weekStart && s.Date <= weekEnd)
+                .Where(s => s.Assignments.Any(a => a.EmployeeId == employee.Id))
+                .Sum(s => (double)s.Hours);
+            var projectedHours = scheduledHours + (double)shift.Hours;
+
+            if (contractualWeeklyHours > 0 && projectedHours > (double)contractualWeeklyHours)
+            {
+                var overtime = projectedHours - (double)contractualWeeklyHours;
+                warnings.Add($"Planlagt over avtalt stillingsomfang: {overtime:F1}t over {contractualWeeklyHours:F1}t/uke");
+                score -= Math.Min(30, (int)Math.Ceiling(overtime * 3));
+            }
+            else if (contractualWeeklyHours > 0 && projectedHours >= (double)contractualWeeklyHours * 0.9)
+            {
+                warnings.Add("Nær avtalt ukentlig timeomfang");
+                score -= 8;
+            }
+
+            var recentHours = allShifts
                 .Where(s => s.Date >= shift.Date.AddDays(-6) && s.Date <= shift.Date)
                 .Where(s => s.Assignments.Any(a => a.EmployeeId == employee.Id))
                 .Sum(s => (double)s.Hours);
 
-            if (employee.MaxWeeklyHours > 0 && assignedHours + (double)shift.Hours > (double)employee.MaxWeeklyHours)
-                hardFailures.Add($"Ukegrense overskrides ({assignedHours + (double)shift.Hours:F1}t > {employee.MaxWeeklyHours:F1}t)");
-            else if (assignedHours >= 35)
+            if (recentHours >= 35)
             {
                 warnings.Add("Høy planlagt belastning siste 7 dager");
-                score -= 20;
+                score -= 15;
             }
-            else if (assignedHours >= 30)
+            else if (recentHours >= 30)
             {
                 warnings.Add("Moderat høy belastning siste 7 dager");
-                score -= 10;
+                score -= 8;
             }
 
             score -= hardFailures.Count * 40;
@@ -102,7 +127,7 @@ public sealed class PlanningAdvisor
                 hardFailures.Count == 0,
                 hardFailures,
                 warnings,
-                assignedHours));
+                recentHours));
         }
 
         return results
