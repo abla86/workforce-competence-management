@@ -18,7 +18,20 @@ $tests = ".\backend\Workforce.Api.Tests\Workforce.Api.Tests.csproj"
 $migrations = ".\backend\Workforce.Api\Migrations"
 
 if (-not $env:DB_PASSWORD -and -not $env:MSSQL_SA_PASSWORD) {
-    $env:DB_PASSWORD = "VaktklarLocalDb_2026_StrongPassword_9X7K4M2P8Q6R5T3Y1"
+    $envFile = Join-Path (Get-Location) ".env"
+    if (-not (Test-Path $envFile)) {
+        throw "Local .env is required. Copy .env.example to .env and set DB_PASSWORD. The real .env is ignored by Git."
+    }
+
+    $dbPasswordLine = Get-Content $envFile | Where-Object { $_ -match '^\s*DB_PASSWORD\s*=\s*(.+?)\s*$' } | Select-Object -First 1
+    if (-not $dbPasswordLine) {
+        throw "DB_PASSWORD is missing from the local .env file."
+    }
+
+    $env:DB_PASSWORD = ($dbPasswordLine -replace '^\s*DB_PASSWORD\s*=\s*', '').Trim().Trim('"').Trim("'")
+    if ([string]::IsNullOrWhiteSpace($env:DB_PASSWORD)) {
+        throw "DB_PASSWORD in .env is empty."
+    }
 }
 
 dotnet restore $tests
@@ -77,6 +90,9 @@ finally {
 
 docker info *> $null
 if ($LASTEXITCODE -ne 0) { throw "Docker Engine is not available. Open Docker Desktop." }
+
+docker compose config --quiet
+if ($LASTEXITCODE -ne 0) { throw "Docker Compose configuration is invalid or required local environment values are missing." }
 
 docker compose down -v --remove-orphans
 if ($LASTEXITCODE -ne 0) { throw "Docker cleanup failed." }
