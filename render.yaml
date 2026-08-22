@@ -83,4 +83,4 @@ services:
       - key: VITE_DEMO_USERNAME
         value: demo
       - key: VITE_DEMO_PASSWORD
-        value: WorkforceDemo2026!
+        value: VaktklarDemo2026!
