@@ -69,23 +69,20 @@ public sealed class PlanningAdvisor
                     hardFailures.Add($"Feil rolle for {requirement.Competence.Name}");
             }
 
-            // Contract hours are derived from employment percentage unless a lower
-            // configured maximum has been supplied. Planned hours above the contract
-            // are surfaced as overtime risk, but are not silently treated as illegal.
+            // Contract hours are assessed over the same rolling seven-day planning window
+            // used by the workforce load calculation. This also handles a Monday target
+            // shift correctly when the preceding Sunday belongs to the preceding calendar week.
+            var windowStart = shift.Date.AddDays(-6);
+            var scheduledHours = allShifts
+                .Where(s => s.Date >= windowStart && s.Date <= shift.Date)
+                .Where(s => s.Assignments.Any(a => a.EmployeeId == employee.Id))
+                .Sum(s => (double)s.Hours);
+
             var contractualWeeklyHours = employee.PositionPercent > 0
                 ? Math.Min(employee.MaxWeeklyHours > 0 ? employee.MaxWeeklyHours : 37.5m,
                     37.5m * employee.PositionPercent / 100m)
                 : 0m;
 
-            var weekStart = shift.Date.AddDays(-(int)shift.Date.DayOfWeek + (int)DayOfWeek.Monday);
-            if (shift.Date.DayOfWeek == DayOfWeek.Sunday)
-                weekStart = shift.Date.AddDays(-6);
-            var weekEnd = weekStart.AddDays(6);
-
-            var scheduledHours = allShifts
-                .Where(s => s.Date >= weekStart && s.Date <= weekEnd)
-                .Where(s => s.Assignments.Any(a => a.EmployeeId == employee.Id))
-                .Sum(s => (double)s.Hours);
             var projectedHours = scheduledHours + (double)shift.Hours;
 
             if (contractualWeeklyHours > 0 && projectedHours > (double)contractualWeeklyHours)
@@ -100,17 +97,12 @@ public sealed class PlanningAdvisor
                 score -= 8;
             }
 
-            var recentHours = allShifts
-                .Where(s => s.Date >= shift.Date.AddDays(-6) && s.Date <= shift.Date)
-                .Where(s => s.Assignments.Any(a => a.EmployeeId == employee.Id))
-                .Sum(s => (double)s.Hours);
-
-            if (recentHours >= 35)
+            if (scheduledHours >= 35)
             {
                 warnings.Add("Høy planlagt belastning siste 7 dager");
                 score -= 15;
             }
-            else if (recentHours >= 30)
+            else if (scheduledHours >= 30)
             {
                 warnings.Add("Moderat høy belastning siste 7 dager");
                 score -= 8;
@@ -127,7 +119,7 @@ public sealed class PlanningAdvisor
                 hardFailures.Count == 0,
                 hardFailures,
                 warnings,
-                recentHours));
+                scheduledHours));
         }
 
         return results
