@@ -12,7 +12,7 @@ using Workforce.Api.Data;
 namespace Workforce.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260822154505_InitialCreate")]
+    [Migration("20260822155759_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
