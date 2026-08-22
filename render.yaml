@@ -37,6 +37,8 @@ services:
         value: "10000"
       - key: ASPNETCORE_URLS
         value: http://+:10000
+      - key: DEMO_MODE
+        value: "true"
       - key: DB_HOST
         fromService:
           type: pserv
@@ -62,10 +64,6 @@ services:
       bash -c 'until (echo > /dev/tcp/$DB_HOST/1433) 2>/dev/null; do sleep 2; done;
       export ConnectionStrings__DefaultConnection="Server=$DB_HOST,1433;Database=WorkforceCompetenceDb;User Id=sa;Password=$DB_PASSWORD;TrustServerCertificate=True";
       exec dotnet Workforce.Api.dll'
-    initialDeployHook: >-
-      bash -c 'curl -fsS -X POST "$RENDER_EXTERNAL_URL/api/auth/bootstrap"
-      -H "Content-Type: application/json"
-      -d "{\"bootstrapKey\":\"$VAKTKLAR_BOOTSTRAP_KEY\",\"username\":\"demo\",\"password\":\"WorkforceDemo2026!\"}"'
 
   - type: web
     name: workforce-frontend
