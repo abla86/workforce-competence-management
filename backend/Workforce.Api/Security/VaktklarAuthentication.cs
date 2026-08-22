@@ -163,7 +163,7 @@ internal sealed class RoleGuardStartupFilter : IStartupFilter
         {
             var rows = await db.EmployeeCompetences.AsNoTracking().Include(x => x.Employee).Include(x => x.Competence).OrderBy(x => x.Employee.Name).ThenBy(x => x.Competence.Name).ToListAsync();
             var sb = new StringBuilder("EmployeeName,CompetenceName,Level,ValidUntil\n");
-            foreach (var x in rows) sb.AppendLine(string.Join(',', Csv(x.Employee.Name), Csv(x.Competence.Name), Csv(x.Level), x.ValidUntil?.ToString("yyyy-MM-dd") ?? ""));
+            foreach (var x in rows) sb.AppendLine(string.Join(',', Csv(x.Employee.Name), Csv(x.Competence.Name), Csv(x.Level.ToString()), x.ValidUntil?.ToString("yyyy-MM-dd") ?? ""));
             await FileResponse(context, sb.ToString(), "text/csv; charset=utf-8", "vaktklar-kompetanse.csv");
             return true;
         }
@@ -260,12 +260,17 @@ internal sealed class RoleGuardStartupFilter : IStartupFilter
             var employee = await db.Employees.FirstOrDefaultAsync(e => e.Name == employeeName);
             var competence = await db.Competences.FirstOrDefaultAsync(c => c.Name == competenceName);
             if (employee is null || competence is null) { errors.Add(new { row = r + 1, message = "EmployeeName or CompetenceName not found." }); continue; }
-            var level = Get("Level");
-            if (string.IsNullOrWhiteSpace(level)) level = "Basic";
+            var levelText = Get("Level");
+            if (string.IsNullOrWhiteSpace(levelText)) levelText = nameof(CompetenceLevel.Basic);
+            if (!Enum.TryParse<CompetenceLevel>(levelText, true, out var level))
+            {
+                errors.Add(new { row = r + 1, message = $"Invalid competence level '{levelText}'. Valid values: Basic, Intermediate, Advanced." });
+                continue;
+            }
             var validUntil = DateOnly.TryParse(Get("ValidUntil"), out var parsedDate) ? parsedDate : (DateOnly?)null;
             var item = await db.EmployeeCompetences.FindAsync(employee.Id, competence.Id);
-            if (item is null) { db.EmployeeCompetences.Add(new EmployeeCompetence { EmployeeId = employee.Id, CompetenceId = competence.Id, Level = level, ValidUntil = validUntil }); created++; }
-            else { item.Level = level; item.ValidUntil = validUntil; updated++; }
+            if (item is null) db.EmployeeCompetences.Add(new EmployeeCompetence { EmployeeId = employee.Id, CompetenceId = competence.Id, Level = level, ValidUntil = validUntil });
+            else { item.Level = level; item.ValidUntil = validUntil; }
         }
         await db.SaveChangesAsync(); await context.Response.WriteAsJsonAsync(new { created, updated, errors });
     }
@@ -279,37 +284,56 @@ internal sealed class RoleGuardStartupFilter : IStartupFilter
 
     private static string BuildShiftHtml(IEnumerable<Shift> shifts, CoverageService coverage)
     {
-        var sb = new StringBuilder("<html><head><meta charset='utf-8'><style>table{border-collapse:collapse}th,td{border:1px solid #999;padding:6px}.green{background:#d9ead3}.yellow{background:#fff2cc}.red{background:#f4cccc}</style></head><body><h1>Vaktklar – vaktplan</h1><table><tr><th>Dato</th><th>Vakt</th><th>Avdeling</th><th>Start</th><th>Slutt</th><th>Minimum</th><th>Bemannet</th><th>Status</th><th>Kommentar</th></tr>");
+        var sb = new StringBuilder();
+        sb.Append("<html><head><meta charset='utf-8'><style>table{border-collapse:collapse}th,td{border:1px solid #999;padding:6px}.green{background:#d9ead3}.yellow{background:#fff2cc}.red{background:#f4cccc}</style></head><body><h1>Vaktklar – vaktplan</h1><table><tr><th>Dato</th><th>Vakt</th><th>Avdeling</th><th>Start</th><th>Slutt</th><th>Minimum</th><th>Bemannet</th><th>Status</th><th>Kommentar</th></tr>");
         foreach (var shift in shifts)
         {
             var result = coverage.AnalyzeShift(shift); var status = result.OverallStatus ?? "UNKNOWN";
             var css = status == "GREEN" ? "green" : status == "YELLOW" ? "yellow" : "red";
-            var comment = string.Join(" | ", result.Warnings ?? []);
-            sb.Append($"<tr class='{css}'><td>{H(shift.Date.ToString("yyyy-MM-dd"))}</td><td>{H(shift.ShiftType)}</td><td>{H(shift.Department)}</td><td>{H(shift.StartTime?.ToString("HH:mm") ?? "")}</td><td>{H(shift.StartTime?.AddHours((double)shift.Hours).ToString("HH:mm") ?? "")}</td><td>{shift.MinimumStaff}</td><td>{shift.Assignments.Count}</td><td>{H(status)}</td><td>{H(comment)}</td></tr>");
+            sb.Append($"<tr class='{css}'>");
+            sb.Append($"<td>{System.Net.WebUtility.HtmlEncode(shift.Date.ToString("yyyy-MM-dd"))}</td>");
+            sb.Append($"<td>{System.Net.WebUtility.HtmlEncode(shift.ShiftType)}</td>");
+            sb.Append($"<td>{System.Net.WebUtility.HtmlEncode(shift.Department)}</td>");
+            sb.Append($"<td>{shift.StartTime}</td><td>{shift.StartTime?.AddHours((double)shift.Hours)}</td>");
+            sb.Append($"<td>{shift.MinimumStaff}</td><td>{shift.Assignments.Count}</td>");
+            sb.Append($"<td>{System.Net.WebUtility.HtmlEncode(status)}</td>");
+            sb.Append($"<td>{System.Net.WebUtility.HtmlEncode(string.Join("; ", result.Warnings ?? []))}</td>");
+            sb.Append("</tr>");
         }
-        return sb.Append("</table></body></html>").ToString();
+        sb.Append("</table></body></html>");
+        return sb.ToString();
     }
 
     private static string Csv(string? value) => $"\"{(value ?? "").Replace("\"", "\"\"")}\"";
-    private static string? NullIfEmpty(string value) => string.IsNullOrWhiteSpace(value) ? null : value;
-    private static decimal ParseDecimal(string value, decimal fallback) => decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var n) ? n : decimal.TryParse(value, NumberStyles.Number, CultureInfo.GetCultureInfo("nb-NO"), out n) ? n : fallback;
-    private static string H(string value) => System.Net.WebUtility.HtmlEncode(value);
 
-    private static IEnumerable<List<string>> ParseCsv(string text)
+    private static string NullIfEmpty(string value) => string.IsNullOrWhiteSpace(value) ? "" : value;
+
+    private static decimal ParseDecimal(string value, decimal fallback) => decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed) ? parsed : fallback;
+
+    private static List<List<string>> ParseCsv(string csv)
     {
-        var rows = new List<List<string>>(); var row = new List<string>(); var cell = new StringBuilder(); var quoted = false;
-        for (var i = 0; i < text.Length; i++)
+        var result = new List<List<string>>();
+        var row = new List<string>(); var cell = new StringBuilder(); var quoted = false;
+        for (var i = 0; i < csv.Length; i++)
         {
-            var ch = text[i];
-            if (ch == '"') { if (quoted && i + 1 < text.Length && text[i + 1] == '"') { cell.Append('"'); i++; } else quoted = !quoted; }
-            else if (ch == ',' && !quoted) { row.Add(cell.ToString()); cell.Clear(); }
-            else if ((ch == '\n' || ch == '\r') && !quoted) { if (ch == '\r' && i + 1 < text.Length && text[i + 1] == '\n') i++; row.Add(cell.ToString()); cell.Clear(); if (row.Any(x => !string.IsNullOrWhiteSpace(x))) rows.Add(row); row = []; }
-            else cell.Append(ch);
+            var ch = csv[i];
+            if (ch == '"')
+            {
+                if (quoted && i + 1 < csv.Length && csv[i + 1] == '"') { cell.Append('"'); i++; }
+                else quoted = !quoted;
+                continue;
+            }
+            if (ch == ',' && !quoted) { row.Add(cell.ToString()); cell.Clear(); continue; }
+            if ((ch == '\n' || ch == '\r') && !quoted)
+            {
+                if (ch == '\r' && i + 1 < csv.Length && csv[i + 1] == '\n') i++;
+                row.Add(cell.ToString()); cell.Clear();
+                if (row.Any(x => !string.IsNullOrWhiteSpace(x))) result.Add(row);
+                row = new List<string>(); continue;
+            }
+            cell.Append(ch);
         }
-        if (cell.Length > 0 || row.Count > 0) { row.Add(cell.ToString()); rows.Add(row); }
-        return rows;
+        if (cell.Length > 0 || row.Count > 0) { row.Add(cell.ToString()); if (row.Any(x => !string.IsNullOrWhiteSpace(x))) result.Add(row); }
+        return result;
     }
 }
-
-public sealed record LoginRequest(string Username, string Password);
-public sealed record BootstrapRequest(string BootstrapKey, string Username, string Password);
