@@ -1,5 +1,7 @@
 name: Reconcile EF migration snapshot
 
+# Deliberately triggered by changes to this workflow so a model reconciliation can
+# be performed in GitHub Actions without requiring a local EF command.
 on:
   push:
     branches: [ "main" ]
