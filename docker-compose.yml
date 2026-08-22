@@ -3,7 +3,7 @@ services:
     image: mcr.microsoft.com/mssql/server:2022-latest
     environment:
       ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: "${DB_PASSWORD:-WorkforceLocalDb_2026_StrongPassword_ChangeMe!}"
+      MSSQL_SA_PASSWORD: "VaktklarLocalDb_2026_StrongPassword_9X7K4M2P8Q6R5T3Y1"
     ports:
       - "1433:1433"
     volumes:
@@ -20,12 +20,13 @@ services:
       context: ./backend/Workforce.Api
     environment:
       ASPNETCORE_URLS: "http://+:8080"
-      ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=WorkforceCompetenceDb;User Id=sa;Password=${DB_PASSWORD:-WorkforceLocalDb_2026_StrongPassword_ChangeMe!};TrustServerCertificate=True"
-      Jwt__SecretKey: "${JWT_SECRET_KEY:-WorkforceLocalJwtSecret_2026_ChangeMe_AtLeast32Bytes_9X7K4M2P8Q6R5T3Y1}"
+      DEMO_MODE: "true"
+      ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=WorkforceCompetenceDb;User Id=sa;Password=VaktklarLocalDb_2026_StrongPassword_9X7K4M2P8Q6R5T3Y1;TrustServerCertificate=True"
+      Jwt__SecretKey: "VaktklarLocalJwtSecret_2026_AtLeast32Bytes_9X7K4M2P8Q6R5T3Y1"
       Jwt__Issuer: "vaktklar"
       Jwt__Audience: "vaktklar-web"
-      VAKTKLAR_BOOTSTRAP_KEY: "${VAKTKLAR_BOOTSTRAP_KEY:-WorkforceBootstrap_2026_ChangeMe_OneTimeKey_9X7K4M2P8Q6R5T3Y1}"
-      Security__CookieSecure: "${SECURITY_COOKIE_SECURE:-false}"
+      VAKTKLAR_BOOTSTRAP_KEY: "VaktklarLocalBootstrap_2026_DemoKey_9X7K4M2P8Q6R5T3Y1"
+      Security__CookieSecure: "false"
       Cors__Origins__0: "http://localhost:8088"
       Cors__Origins__1: "http://localhost:5173"
     ports:
@@ -43,6 +44,10 @@ services:
   frontend:
     build:
       context: ./frontend
+    environment:
+      VITE_DEMO_AUTO_LOGIN: "true"
+      VITE_DEMO_USERNAME: "demo"
+      VITE_DEMO_PASSWORD: "VaktklarDemo2026!"
     ports:
       - "8088:80"
     depends_on:
