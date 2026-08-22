@@ -1,0 +1,32 @@
+name: EF Repair Inspect
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "10.0.x"
+      - name: Restore
+        run: dotnet restore backend/Workforce.Api/Workforce.Api.csproj
+      - name: Build
+        run: dotnet build backend/Workforce.Api/Workforce.Api.csproj -c Release --no-restore
+      - name: Install EF CLI
+        run: dotnet tool install --global dotnet-ef --version 10.0.11
+      - name: Generate repair migration
+        run: |
+          rm -rf /tmp/ef-repair
+          mkdir -p /tmp/ef-repair
+          dotnet ef migrations add EfRepair --project backend/Workforce.Api/Workforce.Api.csproj --startup-project backend/Workforce.Api/Workforce.Api.csproj --context Workforce.Api.Data.AppDbContext --output-dir /tmp/ef-repair
+          echo '=== GENERATED FILES ==='
+          find /tmp/ef-repair -maxdepth 1 -type f -print
+          for f in /tmp/ef-repair/*; do echo "=== $f ==="; cat "$f"; done
