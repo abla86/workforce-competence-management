@@ -15,6 +15,7 @@ public sealed class MigrationService
     public async Task<MigrationImportResult> ImportAsync(MigrationImportRequest request, string actor, CancellationToken cancellationToken = default)
     {
         if (request.Employees.Count > 5000 || request.Competences.Count > 5000 || request.Shifts.Count > 10000) throw new ArgumentException("Import exceeds the supported limits.");
+        var mode = Enum.TryParse<MigrationConflictMode>(request.Mode, true, out var parsedMode) ? parsedMode : MigrationConflictMode.Skip;
         var created = 0; var updated = 0; var skipped = 0; var conflicts = new List<MigrationConflict>();
         await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
         try
@@ -29,8 +30,8 @@ public sealed class MigrationService
                 if (string.IsNullOrWhiteSpace(key)) { conflicts.Add(new("Competence", source.Name, "Mangler navn")); continue; }
                 if (competenceMap.TryGetValue(key, out var existing))
                 {
-                    if (request.Mode == MigrationConflictMode.Skip) { skipped++; continue; }
-                    if (request.Mode == MigrationConflictMode.Create) { conflicts.Add(new("Competence", source.Name, "Finnes allerede")); continue; }
+                    if (mode == MigrationConflictMode.Skip) { skipped++; continue; }
+                    if (mode == MigrationConflictMode.Create) { conflicts.Add(new("Competence", source.Name, "Finnes allerede")); continue; }
                     existing.Category = string.IsNullOrWhiteSpace(source.Category) ? existing.Category : source.Category.Trim(); updated++;
                 }
                 else { var item = new Competence { Name = source.Name.Trim(), Category = string.IsNullOrWhiteSpace(source.Category) ? "General" : source.Category.Trim() }; _db.Competences.Add(item); competenceMap[key] = item; created++; }
@@ -44,8 +45,8 @@ public sealed class MigrationService
                 if (string.IsNullOrWhiteSpace(Normalize(source.Name)) || string.IsNullOrWhiteSpace(Normalize(source.Role))) { conflicts.Add(new("Employee", source.Name, "Navn og rolle er påkrevd")); continue; }
                 if (employeeMap.TryGetValue(key, out var existing))
                 {
-                    if (request.Mode == MigrationConflictMode.Skip) { skipped++; continue; }
-                    if (request.Mode == MigrationConflictMode.Create) { conflicts.Add(new("Employee", source.Name, "Finnes allerede")); continue; }
+                    if (mode == MigrationConflictMode.Skip) { skipped++; continue; }
+                    if (mode == MigrationConflictMode.Create) { conflicts.Add(new("Employee", source.Name, "Finnes allerede")); continue; }
                     existing.Department = source.Department?.Trim() ?? existing.Department; existing.Authorization = source.Authorization?.Trim();
                     if (source.PositionPercent is > 0 and <= 100) existing.PositionPercent = source.PositionPercent.Value;
                     if (source.MaxWeeklyHours is > 0 and <= 80) existing.MaxWeeklyHours = source.MaxWeeklyHours.Value;
@@ -68,7 +69,7 @@ public sealed class MigrationService
                     if (!competenceMap.TryGetValue(Normalize(ec.Name), out var competence)) { conflicts.Add(new("EmployeeCompetence", $"{source.Name}/{ec.Name}", "Kompetansen finnes ikke")); continue; }
                     var existing = await _db.EmployeeCompetences.FindAsync([employee.Id, competence.Id], cancellationToken);
                     if (existing is null) _db.EmployeeCompetences.Add(new EmployeeCompetence { EmployeeId = employee.Id, CompetenceId = competence.Id, Level = ec.Level, ValidUntil = ec.ValidUntil });
-                    else if (request.Mode == MigrationConflictMode.Update) { existing.Level = ec.Level; existing.ValidUntil = ec.ValidUntil; }
+                    else if (mode == MigrationConflictMode.Update) { existing.Level = ec.Level; existing.ValidUntil = ec.ValidUntil; }
                 }
             }
 
@@ -77,8 +78,8 @@ public sealed class MigrationService
                 var key = ShiftKey(source.Date, source.StartTime, source.ShiftType, source.Department);
                 if (shiftMap.TryGetValue(key, out var existing))
                 {
-                    if (request.Mode == MigrationConflictMode.Skip) { skipped++; continue; }
-                    if (request.Mode == MigrationConflictMode.Create) { conflicts.Add(new("Shift", key, "Finnes allerede")); continue; }
+                    if (mode == MigrationConflictMode.Skip) { skipped++; continue; }
+                    if (mode == MigrationConflictMode.Create) { conflicts.Add(new("Shift", key, "Finnes allerede")); continue; }
                     existing.Hours = source.Hours; existing.MinimumStaff = source.MinimumStaff; existing.IsCritical = source.IsCritical; existing.IsPublished = source.IsPublished; updated++;
                     await ApplyShiftRelations(existing, source, employeeMap, competenceMap, cancellationToken);
                 }
@@ -104,8 +105,8 @@ public sealed class MigrationService
     {
         foreach (var assignment in source.Assignments ?? [])
         {
-            var key = Normalize(assignment);
-            var employee = employees.Values.FirstOrDefault(x => Normalize(x.Name) == key || EmployeeKey(x.Name, x.Role) == key);
+            var normalized = Normalize(assignment);
+            var employee = employees.Values.FirstOrDefault(x => Normalize(x.Name) == normalized || EmployeeKey(x.Name, x.Role) == normalized);
             if (employee is not null && !shift.Assignments.Any(x => x.EmployeeId == employee.Id)) _db.ShiftAssignments.Add(new ShiftAssignment { ShiftId = shift.Id, EmployeeId = employee.Id });
         }
         foreach (var requirement in source.Requirements ?? [])
@@ -132,11 +133,7 @@ public sealed class MigrationService
             cancellationToken.ThrowIfCancellationRequested();
             var part = (WorksheetPart)workbook.GetPartById(sheet.Id!);
             var rows = part.Worksheet.GetFirstChild<SheetData>()?.Elements<Row>() ?? [];
-            foreach (var row in rows)
-            {
-                var values = row.Elements<Cell>().Select(cell => GetCellValue(cell, sharedStrings)).ToList();
-                result.Add(new[] { $"__SHEET__:{sheet.Name}" }.Concat(values).ToList());
-            }
+            foreach (var row in rows) result.Add(new[] { $"__SHEET__:{sheet.Name}" }.Concat(row.Elements<Cell>().Select(cell => GetCellValue(cell, sharedStrings))).ToList());
         }
         return result;
     }
@@ -150,7 +147,7 @@ public sealed class MigrationService
 }
 
 public enum MigrationConflictMode { Skip, Update, Create }
-public sealed record MigrationImportRequest(List<MigrationEmployee> Employees, List<MigrationCompetence> Competences, List<MigrationShift> Shifts, MigrationConflictMode Mode = MigrationConflictMode.Skip, string? SourceFileName = null);
+public sealed record MigrationImportRequest(List<MigrationEmployee> Employees, List<MigrationCompetence> Competences, List<MigrationShift> Shifts, string Mode = "Skip", string? SourceFileName = null);
 public sealed record MigrationEmployee(string Name, string Role, string? Department, string? Authorization, decimal? PositionPercent, decimal? MaxWeeklyHours, bool IsActive = true, List<MigrationEmployeeCompetence>? Competences = null);
 public sealed record MigrationEmployeeCompetence(string Name, CompetenceLevel Level, DateOnly? ValidUntil);
 public sealed record MigrationCompetence(string Name, string? Category);
