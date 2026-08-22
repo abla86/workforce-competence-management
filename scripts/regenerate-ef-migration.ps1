@@ -1,4 +1,5 @@
 $ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
 Set-Location (Join-Path $PSScriptRoot '..')
 
 $project = 'backend/Workforce.Api/Workforce.Api.csproj'
@@ -31,22 +32,21 @@ Write-Host '=== Generate InitialCreate ===' -ForegroundColor Cyan
 dotnet ef migrations add InitialCreate --project $project --startup-project $startup --output-dir Migrations --context AppDbContext
 if ($LASTEXITCODE -ne 0) { throw 'EF migration generation failed.' }
 
-$required = @(
-    '20260822100000_InitialCreate.cs',
-    '20260822100000_InitialCreate.Designer.cs',
-    'AppDbContextModelSnapshot.cs'
-)
-
 $files = Get-ChildItem $migrations -File | Select-Object -ExpandProperty Name
-$missing = $required | Where-Object { $_ -notin $files }
+$designer = $files | Where-Object { $_ -match '^\d+_InitialCreate\.Designer\.cs$' }
+$migration = $files | Where-Object { $_ -match '^\d+_InitialCreate\.cs$' }
+$snapshot = $files | Where-Object { $_ -eq 'AppDbContextModelSnapshot.cs' }
 
-if ($missing.Count -gt 0) {
+if (($migration | Measure-Object).Count -ne 1 -or ($designer | Measure-Object).Count -ne 1 -or ($snapshot | Measure-Object).Count -ne 1) {
     Write-Host 'Generated migration files:' -ForegroundColor Red
     $files | ForEach-Object { Write-Host " - $_" }
-    throw ('Migration generation completed without required files: ' + ($missing -join ', '))
+    throw 'Migration generation did not produce exactly one InitialCreate migration, one Designer and one snapshot.'
 }
 
-Write-Host 'Migration files verified.' -ForegroundColor Green
+Write-Host 'Migration files verified:' -ForegroundColor Green
+Write-Host " - $migration"
+Write-Host " - $designer"
+Write-Host ' - AppDbContextModelSnapshot.cs'
 
 Write-Host '=== Validate migration set ===' -ForegroundColor Cyan
 $migrationList = dotnet ef migrations list --project $project --startup-project $startup --context AppDbContext
