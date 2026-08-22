@@ -21,7 +21,7 @@ services:
     environment:
       ASPNETCORE_URLS: "http://+:8080"
       DEMO_MODE: "true"
-      ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=WorkforceCompetenceDb;User Id=sa;Password=VaktklarLocalDb_2026_StrongPassword_9X7K4M2P8Q6R5T3Y1;TrustServerCertificate=True"
+      ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=WorkforceCompetenceDb;User Id=sa;Password=VaktklarLocalDb_2026_StrongPassword_9X7K4M2P8Q6R5T3Y1;TrustServerCertificate=True;Encrypt=False"
       Jwt__SecretKey: "VaktklarLocalJwtSecret_2026_AtLeast32Bytes_9X7K4M2P8Q6R5T3Y1"
       Jwt__Issuer: "vaktklar"
       Jwt__Audience: "vaktklar-web"
