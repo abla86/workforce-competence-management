@@ -14,7 +14,7 @@ public sealed record RequirementCoverageResult(
 public sealed record ShiftAssignmentResult(int EmployeeId, string Name, string Role);
 
 public sealed record ShiftCoverageResult(
-    int Id,
+    int ShiftId,
     DateOnly Date,
     string ShiftType,
     decimal Hours,
