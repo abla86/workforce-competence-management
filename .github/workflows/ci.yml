@@ -17,8 +17,8 @@ jobs:
   backend:
     runs-on: ubuntu-latest
     env:
-      DB_PASSWORD: ci-ef-password
-      MSSQL_SA_PASSWORD: ci-ef-password
+      DB_PASSWORD: "C1password!"
+      MSSQL_SA_PASSWORD: "C1password!"
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-dotnet@v6
@@ -58,24 +58,13 @@ jobs:
 
   docker:
     runs-on: ubuntu-latest
+    env:
+      DB_PASSWORD: "C1password!"
+      JWT_SECRET_KEY: "CI_JWT_SECRET_KEY_32_BYTES_LONG_12345!"
+      VAKTKLAR_BOOTSTRAP_KEY: "CI_BOOTSTRAP_KEY_32_BYTES_LONG_12345!"
+      DEMO_PASSWORD: "C1demoPass!"
     steps:
       - uses: actions/checkout@v6
-      - name: Generate ephemeral CI secrets
-        shell: bash
-        run: |
-          set -euo pipefail
-          DB_PASSWORD="$(openssl rand -hex 32)"
-          JWT_SECRET_KEY="$(openssl rand -hex 32)"
-          VAKTKLAR_BOOTSTRAP_KEY="$(openssl rand -hex 32)"
-          DEMO_PASSWORD="$(openssl rand -hex 16)"
-          echo "DB_PASSWORD=$DB_PASSWORD" >> "$GITHUB_ENV"
-          echo "JWT_SECRET_KEY=$JWT_SECRET_KEY" >> "$GITHUB_ENV"
-          echo "VAKTKLAR_BOOTSTRAP_KEY=$VAKTKLAR_BOOTSTRAP_KEY" >> "$GITHUB_ENV"
-          echo "DEMO_PASSWORD=$DEMO_PASSWORD" >> "$GITHUB_ENV"
-          echo "::add-mask::$DB_PASSWORD"
-          echo "::add-mask::$JWT_SECRET_KEY"
-          echo "::add-mask::$VAKTKLAR_BOOTSTRAP_KEY"
-          echo "::add-mask::$DEMO_PASSWORD"
       - name: Validate Compose configuration
         run: docker compose config --quiet
       - name: Build Docker Compose stack
