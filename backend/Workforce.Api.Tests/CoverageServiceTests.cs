@@ -73,6 +73,14 @@ public sealed class CoverageServiceTests
     }
 
     [Fact]
+    public void RestPolicyUsesSharedSchedulingRule()
+    {
+        Assert.Equal(11, SchedulingRules.MinimumDailyRestHours);
+        Assert.Equal(35, SchedulingRules.MinimumWeeklyRestHours);
+        Assert.Equal(37.5m, SchedulingRules.DefaultWeeklyHours);
+    }
+
+    [Fact]
     public void InvalidRequirementLevelIsRejectedByJsonDeserialization()
     {
         var json = "{\"CompetenceId\":1,\"MinimumCount\":1,\"MinimumLevel\":\"Advcanced\"}";
