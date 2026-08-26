@@ -16,6 +16,10 @@ env:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    env:
+      # EF design-time validation only needs a complete connection string to construct the model.
+      # No database connection is made by this validation step.
+      ConnectionStrings__DefaultConnection: "Server=localhost,1433;Database=WorkforceCompetenceDb;User Id=sa;Password=CiAa1!ModelCheck;TrustServerCertificate=True;Encrypt=False"
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-dotnet@v6
@@ -61,7 +65,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          DB_PASSWORD="$(openssl rand -hex 32)"
+          # SQL Server requires at least three of four character classes.
+          DB_PASSWORD="Aa1!$(openssl rand -hex 28)"
           JWT_SECRET_KEY="$(openssl rand -hex 32)"
           VAKTKLAR_BOOTSTRAP_KEY="$(openssl rand -hex 32)"
           DEMO_PASSWORD="$(openssl rand -hex 16)"
