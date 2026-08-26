@@ -11,6 +11,14 @@
 - Applied the same recovery layer to authenticated downloads.
 - Updated the README architecture and employer-facing evidence to reflect the actual integration and safety boundary.
 
+## 2026-08-26 — Shared scheduling safety policy
+
+- Centralised scheduling safety baselines in `SchedulingRules.cs` so candidate ranking and coverage evaluation use the same policy source.
+- Exposed explicit baseline values for daily rest, weekly rest, default weekly hours and maximum shift duration.
+- Updated coverage rest warnings to use the shared daily-rest constant instead of a separate hard-coded value.
+- Added a regression test confirming the shared scheduling policy values are available to the coverage test suite.
+- Kept the policy explicitly documented as a configurable safety baseline rather than claiming it replaces applicable agreements, local rules or legal assessment.
+
 ## Scope
 
-This change improves resilience of the existing frontend ↔ API connection. It does not claim automatic repair of application defects, data corruption or infrastructure failure.
+The changes strengthen the existing frontend/API and scheduling-rule integration. They do not claim automatic repair of application defects, data corruption, infrastructure failure or legal compliance. The latest GitHub Actions verification remains the source of truth for build/test status.
