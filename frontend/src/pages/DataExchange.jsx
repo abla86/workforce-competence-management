@@ -1,12 +1,10 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 const XLSX_URL = "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js";
 const key = (v) => String(v ?? "").trim().toLowerCase();
 const num = (v, fallback = 0) => { const n = Number(String(v ?? "").replace(",", ".").replace("%", "")); return Number.isFinite(n) ? n : fallback; };
 const isoDate = (v) => { const s = String(v ?? "").slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null; };
 const clock = (v) => { const s = String(v ?? "").slice(0, 5); return /^\d{2}:\d{2}$/.test(s) ? s : null; };
-const employeeKey = (e) => `${key(e.name)}|${key(e.role)}`;
-const shiftKey = (s) => `${s.date}|${s.startTime || ""}|${key(s.shiftType)}|${key(s.department)}`;
 
 function csvRows(text) {
   const rows = []; let row = []; let cell = ""; let quoted = false;
@@ -59,11 +57,10 @@ function validate(payload) {
 }
 
 export default function DataExchange({ employees, competences, shifts, api, mutate }) {
-  const [payload, setPayload] = useState(null); const [file, setFile] = useState(null); const [format, setFormat] = useState(""); const [mode, setMode] = useState("Skip"); const [busy, setBusy] = useState(false); const [message, setMessage] = useState(""); const [error, setError] = useState("");
-  const conflicts = useMemo(() => { if (!payload) return []; const out = []; payload.employees.forEach((e) => { if (employees.some((x) => employeeKey(x) === employeeKey(e))) out.push({ type: "Ansatt", key: `${e.name} / ${e.role}` }); }); payload.competences.forEach((c) => { if (competences.some((x) => key(x.name) === key(c.name))) out.push({ type: "Kompetanse", key: c.name }); }); payload.shifts.forEach((s) => { if (shifts.some((x) => shiftKey(x) === shiftKey(s))) out.push({ type: "Vakt", key: `${s.date} ${s.startTime || ""} ${s.shiftType}` }); }); return out; }, [payload, employees, competences, shifts]);
+  const [payload, setPayload] = useState(null); const [file, setFile] = useState(null); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
 
   async function inspect(selected) {
-    setBusy(true); setError(""); setMessage(""); setFile(selected); setPayload(null);
+    setBusy(true); setError(""); setFile(selected); setPayload(null);
     try {
       const name = selected.name.toLowerCase(); let next;
       if (name.endsWith(".json")) next = jsonToPayload(JSON.parse(await selected.text()));
@@ -73,20 +70,14 @@ export default function DataExchange({ employees, competences, shifts, api, muta
         const XLSX = await ensureXlsx(); const wb = XLSX.read(await selected.arrayBuffer(), { type: "array", cellDates: false }); next = { employees: [], competences: [], shifts: [] };
         for (const sheet of wb.SheetNames) { const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheet], { header: 1, raw: false, defval: "" }); if (!rows.length) continue; const headers = rows[0].map((x) => key(x).replaceAll(" ", "")); for (const values of rows.slice(1)) { const r = Object.fromEntries(headers.map((h, i) => [h, values[i] ?? ""])); if (headers.includes("competencename") || key(sheet).includes("compet")) next.competences.push({ name: field(r, "CompetenceName", "Competence", "Name"), category: field(r, "Category") || "General" }); else if (headers.includes("date") || key(sheet).includes("shift") || key(sheet).includes("vakt")) next.shifts.push({ date: isoDate(field(r, "Date")), startTime: clock(field(r, "StartTime", "Start")), shiftType: field(r, "ShiftType", "Shift", "Type") || "Shift", department: field(r, "Department"), hours: num(field(r, "Hours"), 8), minimumStaff: num(field(r, "MinimumStaff", "Minimum"), 1), isCritical: key(field(r, "IsCritical")) === "true", isPublished: false }); else next.employees.push({ name: field(r, "Name", "Employee", "EmployeeName"), role: field(r, "Role", "Position", "JobTitle"), department: field(r, "Department"), authorization: field(r, "Authorization"), positionPercent: num(field(r, "PositionPercent", "Percent"), 100), maxWeeklyHours: num(field(r, "MaxWeeklyHours", "WeeklyHours"), 37.5), isActive: key(field(r, "IsActive")) !== "false" }); } }
       } else throw new Error("Formatet støttes ikke. Bruk CSV, Excel, JSON eller ICS.");
-      const errors = validate(next); if (errors.length) throw new Error(errors.slice(0, 10).join(" ")); setPayload(next); setFormat(name.endsWith("xlsx") || name.endsWith("xlsm") ? "Excel" : name.endsWith("json") ? "JSON" : name.endsWith("ics") ? "ICS" : "CSV"); setMessage("Format gjenkjent. Mapping foreslått. Ingenting er lagret ennå.");
+      const errors = validate(next); if (errors.length) throw new Error(errors.slice(0, 10).join(" ")); setPayload(next);
     } catch (e) { setError(e.message || "Kunne ikke lese filen."); } finally { setBusy(false); }
   }
 
   async function confirmImport() {
     if (!payload) return; setBusy(true); setError("");
-    try { const result = await api.migrationImport({ ...payload, mode, sourceFileName: file?.name || "manual" }); setMessage(`Import fullført: ${result.created} opprettet, ${result.updated} oppdatert, ${result.skipped} hoppet over. ${result.conflicts?.length || 0} konflikter ble ikke skrevet.`); setPayload(null); setFile(null); await mutate(async () => {}, "Migrering fullført."); } catch (e) { setError(e.message || "Import feilet. Databasen ble rullet tilbake."); } finally { setBusy(false); }
+    try { await api.migrationImport({ ...payload, mode: "Skip", sourceFileName: file?.name || "manual" }); setPayload(null); setFile(null); await mutate(async () => {}, "Migrering fullført."); } catch (e) { setError(e.message || "Import feilet. Databasen ble rullet tilbake."); } finally { setBusy(false); }
   }
-
-  async function exportExcel() {
-    setBusy(true); setError(""); try { const XLSX = await ensureXlsx(); const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(employees), "Employees"); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(competences), "Competences"); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(shifts), "Shifts"); XLSX.writeFile(wb, "workforce-backup.xlsx"); } catch (e) { setError(e.message); } finally { setBusy(false); }
-  }
-  function exportJson() { const blob = new Blob([JSON.stringify({ version: "vaktklar-backup-2", exportedAtUtc: new Date().toISOString(), employees, competences, shifts }, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "workforce-backup.json"; a.click(); URL.revokeObjectURL(url); }
-  function exportIcs() { const events = shifts.map((s) => { const start = new Date(`${s.date}T${s.startTime || "08:00"}:00`); const end = new Date(start.getTime() + Number(s.hours || 8) * 3600000); const fmt = (d) => `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}T${String(d.getHours()).padStart(2,"0")}${String(d.getMinutes()).padStart(2,"0")}00`; return `BEGIN:VEVENT\r\nUID:workforce-${s.id}@vaktklar\r\nDTSTART:${fmt(start)}\r\nDTEND:${fmt(end)}\r\nSUMMARY:${s.shiftType || "Shift"}\r\nDESCRIPTION:Department: ${s.department || ""}; Minimum staffing: ${s.minimumStaff || 1}\r\nEND:VEVENT`; }).join("\r\n"); const content = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Vaktklar//Workforce//EN\r\n${events}\r\nEND:VCALENDAR\r\n`; const blob = new Blob([content], { type: "text/calendar" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "workforce-shifts.ics"; a.click(); URL.revokeObjectURL(url); }
 
   return null;
 }
