@@ -38,12 +38,10 @@ public sealed class PlanningAdvisor
                 var existingStart = SchedulingRules.GetStart(existing);
                 var existingEnd = SchedulingRules.GetEnd(existing);
 
-                // Rest is a compliance warning, not an automatic block. Some healthcare
-                // schedules can use lawful agreements/dispensations and compensatory rest.
-                if (existingEnd <= shiftStart && (shiftStart - existingEnd).TotalHours < 11)
+                if (existingEnd <= shiftStart && (shiftStart - existingEnd).TotalHours < SchedulingRules.MinimumDailyRestHours)
                     warnings.Add($"Kort hvile før vakten ({(shiftStart - existingEnd).TotalHours:F1}t)");
 
-                if (existingStart >= shiftEnd && (existingStart - shiftEnd).TotalHours < 11)
+                if (existingStart >= shiftEnd && (existingStart - shiftEnd).TotalHours < SchedulingRules.MinimumDailyRestHours)
                     warnings.Add($"Kort hvile etter vakten ({(existingStart - shiftEnd).TotalHours:F1}t)");
             }
 
@@ -69,9 +67,6 @@ public sealed class PlanningAdvisor
                     hardFailures.Add($"Feil rolle for {requirement.Competence.Name}");
             }
 
-            // Contract hours are assessed over the same rolling seven-day planning window
-            // used by the workforce load calculation. This also handles a Monday target
-            // shift correctly when the preceding Sunday belongs to the preceding calendar week.
             var windowStart = shift.Date.AddDays(-6);
             var scheduledHours = allShifts
                 .Where(s => s.Date >= windowStart && s.Date <= shift.Date)
@@ -79,8 +74,8 @@ public sealed class PlanningAdvisor
                 .Sum(s => (double)s.Hours);
 
             var contractualWeeklyHours = employee.PositionPercent > 0
-                ? Math.Min(employee.MaxWeeklyHours > 0 ? employee.MaxWeeklyHours : 37.5m,
-                    37.5m * employee.PositionPercent / 100m)
+                ? Math.Min(employee.MaxWeeklyHours > 0 ? employee.MaxWeeklyHours : SchedulingRules.DefaultWeeklyHours,
+                    SchedulingRules.DefaultWeeklyHours * employee.PositionPercent / 100m)
                 : 0m;
 
             var projectedHours = scheduledHours + (double)shift.Hours;
