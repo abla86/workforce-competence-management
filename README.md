@@ -19,7 +19,7 @@ A full-stack workforce-planning and competence-management prototype for **employ
 
 **Prototype 2 — active engineering baseline.**
 
-The repository has a documented full-stack prototype with authentication, workforce/competence planning, coverage analysis, audit support, Docker and automated CI. The newest resilience and scheduling-policy changes are currently being verified by GitHub Actions; this README does not claim those newest changes are green until that verification completes.
+The repository has a documented full-stack prototype with authentication, workforce/competence planning, coverage analysis, audit support, Docker and automated CI. The latest main-branch CI verification has passed after the resilience, scheduling-policy and CI fixes described in the repository.
 
 The repository is suitable for local demonstrations, controlled internal testing and portfolio presentation. It is **not claimed to be production-ready** until the controls in [Production Readiness](docs/PRODUCTION-READINESS.md) are completed for the target organisation.
 
@@ -36,7 +36,7 @@ The last completed full-stack verification before the current fixes recorded:
 - frontend HTTP health passed
 - demo authentication verified
 
-The current branch contains additional frontend resilience, Data Exchange and shared scheduling-policy changes and is undergoing fresh CI verification.
+The current main branch contains the frontend resilience, Data Exchange and shared scheduling-policy changes, with the latest main-branch CI verification completed successfully.
 
 ## Live demo
 
@@ -198,7 +198,7 @@ See [README-SECURITY.md](README-SECURITY.md), [docs/DEPLOYMENT.md](docs/DEPLOYME
 
 GitHub Actions verifies the documented backend, frontend and Docker workflow, including EF migration state, health checks, authentication and workforce smoke flows, plus CodeQL analysis.
 
-The backend previously contained **18 xUnit tests** and the last completed full-stack verification passed all 18. The current branch adds coverage for the shared scheduling-policy baseline and is undergoing a fresh verification. The frontend has lint/build validation; a dedicated component/E2E suite is not claimed.
+The backend contains **18 xUnit tests**, and the latest completed full-stack verification passed all 18. The current main branch also includes coverage for the shared scheduling-policy baseline. The frontend has lint/build validation; a dedicated component/E2E suite is not claimed.
 
 See [docs/TEST-MATRIX.md](docs/TEST-MATRIX.md).
 
