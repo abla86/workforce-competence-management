@@ -16,6 +16,9 @@ env:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    env:
+      DB_PASSWORD: ci-ef-password
+      MSSQL_SA_PASSWORD: ci-ef-password
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-dotnet@v6
