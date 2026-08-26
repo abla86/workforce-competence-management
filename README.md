@@ -17,13 +17,15 @@ A full-stack workforce-planning and competence-management prototype for **employ
 
 ## Status at a glance
 
-**Prototype 2 — verified runnable full-stack prototype.**
+**Prototype 2 — active engineering baseline.**
+
+The repository has a documented full-stack prototype with authentication, workforce/competence planning, coverage analysis, audit support, Docker and automated CI. The newest resilience and Data Exchange fixes are currently being verified by GitHub Actions; this README does not claim those newest changes are green until that verification completes.
 
 The repository is suitable for local demonstrations, controlled internal testing and portfolio presentation. It is **not claimed to be production-ready** until the controls in [Production Readiness](docs/PRODUCTION-READINESS.md) are completed for the target organisation.
 
-### Verification evidence
+### Previous verification evidence
 
-The final local verification recorded:
+The last completed full-stack verification before the current fixes recorded:
 
 - **18/18 backend tests passed**
 - EF model/migration validation passed with no pending model changes
@@ -34,7 +36,7 @@ The final local verification recorded:
 - frontend HTTP health passed
 - demo authentication verified
 
-These results demonstrate the tested software behaviour. They do not establish suitability for a particular employer, staffing policy, clinical service or production environment.
+The current branch contains additional frontend resilience and Data Exchange repairs and is undergoing a fresh CI verification.
 
 ## Live demo
 
@@ -83,7 +85,7 @@ The system is **decision support**. It does not replace professional judgement, 
 
 ### Resilience and safe integration
 
-The frontend uses one shared API communication layer for the application's data flow. Read-only requests can recover automatically from transient network failures and selected gateway/service-limit responses, while state-changing requests are deliberately **not** retried automatically to avoid duplicate writes. Request timeouts and structured error metadata, including an API request identifier when provided by the server, are surfaced to the UI for diagnosis.
+The frontend uses one shared API communication layer for the application's data flow. Read-only requests can recover automatically from transient network failures and selected gateway/service-limit responses, while state-changing requests are deliberately **not** retried automatically to avoid duplicate writes. Each retry gets its own timeout controller. Structured API error metadata and an API request identifier are captured when the server provides one.
 
 This is resilience against transient technical failure; it is **not** a claim of automatic recovery from application defects, data corruption or infrastructure failure.
 
@@ -98,9 +100,11 @@ The frontend includes:
 - ICS calendar export
 - standalone HTML shift-plan report
 - browser print / Save as PDF
-- controlled JSON import for employees and competences
+- controlled JSON/CSV data inspection and import
 
-These are browser-side exports of the authenticated dataset. They are not a replacement for a controlled production backup/recovery system.
+The Data Exchange page now validates recognised file structure in the browser before presenting an import action. The server-side migration API remains the authoritative validation boundary.
+
+These are browser-side exports/import helpers and are not a replacement for a controlled production backup/recovery system.
 
 ## Status model
 
@@ -183,7 +187,7 @@ See [README-SECURITY.md](README-SECURITY.md), [docs/DEPLOYMENT.md](docs/DEPLOYME
 
 GitHub Actions verifies the documented backend, frontend and Docker workflow, including EF migration state, health checks, authentication and workforce smoke flows, plus CodeQL analysis.
 
-The backend currently contains **18 xUnit tests**, all of which passed in the final local verification. The frontend has lint/build validation; a dedicated component/E2E suite is not claimed.
+The backend currently contains **18 xUnit tests**. The previous completed verification passed all 18; the current branch is undergoing a fresh full-stack verification after the latest frontend fixes. The frontend has lint/build validation; a dedicated component/E2E suite is not claimed.
 
 See [docs/TEST-MATRIX.md](docs/TEST-MATRIX.md).
 
@@ -218,6 +222,7 @@ This project demonstrates:
 - REST API and database engineering
 - automated testing and verification
 - resilient frontend/API communication with safe retry boundaries
+- data inspection and controlled migration flow
 - Docker and CI/CD workflows
 - explicit security and production boundaries
 - decision-support design that exposes reasons rather than hiding them behind a status colour
