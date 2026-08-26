@@ -19,7 +19,7 @@ A full-stack workforce-planning and competence-management prototype for **employ
 
 **Prototype 2 — active engineering baseline.**
 
-The repository has a documented full-stack prototype with authentication, workforce/competence planning, coverage analysis, audit support, Docker and automated CI. The newest resilience and Data Exchange fixes are currently being verified by GitHub Actions; this README does not claim those newest changes are green until that verification completes.
+The repository has a documented full-stack prototype with authentication, workforce/competence planning, coverage analysis, audit support, Docker and automated CI. The newest resilience and scheduling-policy changes are currently being verified by GitHub Actions; this README does not claim those newest changes are green until that verification completes.
 
 The repository is suitable for local demonstrations, controlled internal testing and portfolio presentation. It is **not claimed to be production-ready** until the controls in [Production Readiness](docs/PRODUCTION-READINESS.md) are completed for the target organisation.
 
@@ -36,7 +36,7 @@ The last completed full-stack verification before the current fixes recorded:
 - frontend HTTP health passed
 - demo authentication verified
 
-The current branch contains additional frontend resilience and Data Exchange repairs and is undergoing a fresh CI verification.
+The current branch contains additional frontend resilience, Data Exchange and shared scheduling-policy changes and is undergoing fresh CI verification.
 
 ## Live demo
 
@@ -83,6 +83,17 @@ The live deployment uses a demo datastore and automatic demo login. It is intend
 
 The system is **decision support**. It does not replace professional judgement, collective agreements, local staffing rules or organisational responsibility.
 
+### Shared scheduling safety policy
+
+Candidate ranking and coverage evaluation use the same central scheduling baseline in `SchedulingRules.cs`. The prototype exposes explicit values for:
+
+- 11 hours minimum daily rest baseline
+- 35 hours minimum weekly rest baseline
+- 37.5 hours default weekly-hours baseline
+- 24 hours maximum shift-duration guardrail
+
+These are **software safety baselines for the prototype**, not a claim of legal compliance. Applicable legislation, collective agreements, local policies and documented exceptions must be assessed for the target organisation.
+
 ### Resilience and safe integration
 
 The frontend uses one shared API communication layer for the application's data flow. Read-only requests can recover automatically from transient network failures and selected gateway/service-limit responses, while state-changing requests are deliberately **not** retried automatically to avoid duplicate writes. Each retry gets its own timeout controller. Structured API error metadata and an API request identifier are captured when the server provides one.
@@ -125,14 +136,14 @@ Shared frontend API client with controlled recovery
     ↓
 ASP.NET Core Minimal API (.NET 10)
     ↓
-CoverageService / PlanningAdvisor / Authentication / Audit
+CoverageService / PlanningAdvisor / SchedulingRules / Authentication / Audit
     ↓
 Entity Framework Core 10
     ↓
 SQL Server
 ```
 
-`ShiftAssignment` and `ShiftRequirement` are the authoritative scheduling model.
+`ShiftAssignment` and `ShiftRequirement` are the authoritative scheduling model. `SchedulingRules` is the shared policy source consumed by scheduling-analysis components.
 
 ## Technology actually represented
 
@@ -187,7 +198,7 @@ See [README-SECURITY.md](README-SECURITY.md), [docs/DEPLOYMENT.md](docs/DEPLOYME
 
 GitHub Actions verifies the documented backend, frontend and Docker workflow, including EF migration state, health checks, authentication and workforce smoke flows, plus CodeQL analysis.
 
-The backend currently contains **18 xUnit tests**. The previous completed verification passed all 18; the current branch is undergoing a fresh full-stack verification after the latest frontend fixes. The frontend has lint/build validation; a dedicated component/E2E suite is not claimed.
+The backend previously contained **18 xUnit tests** and the last completed full-stack verification passed all 18. The current branch adds coverage for the shared scheduling-policy baseline and is undergoing a fresh verification. The frontend has lint/build validation; a dedicated component/E2E suite is not claimed.
 
 See [docs/TEST-MATRIX.md](docs/TEST-MATRIX.md).
 
@@ -219,6 +230,7 @@ This project demonstrates:
 
 - full-stack application development
 - modelling of competence and staffing rules
+- centralised scheduling policy used across decision-support components
 - REST API and database engineering
 - automated testing and verification
 - resilient frontend/API communication with safe retry boundaries
