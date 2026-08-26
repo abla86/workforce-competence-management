@@ -215,14 +215,14 @@ public sealed class CoverageService
             {
                 var otherStart = SchedulingRules.GetStart(other);
                 var otherEnd = SchedulingRules.GetEnd(other);
-                if (otherEnd <= start && (start - otherEnd).TotalHours < 11)
+                if (otherEnd <= start && (start - otherEnd).TotalHours < SchedulingRules.MinimumDailyRestHours)
                 {
-                    warnings.Add($"Hviletid: {employee.Name} har under 11 timer mellom vakter før denne vakten");
+                    warnings.Add($"Hviletid: {employee.Name} har under {SchedulingRules.MinimumDailyRestHours} timer mellom vakter før denne vakten");
                     break;
                 }
-                if (otherStart >= end && (otherStart - end).TotalHours < 11)
+                if (otherStart >= end && (otherStart - end).TotalHours < SchedulingRules.MinimumDailyRestHours)
                 {
-                    warnings.Add($"Hviletid: {employee.Name} har under 11 timer mellom denne vakten og en senere vakt");
+                    warnings.Add($"Hviletid: {employee.Name} har under {SchedulingRules.MinimumDailyRestHours} timer mellom denne vakten og en senere vakt");
                     break;
                 }
             }
