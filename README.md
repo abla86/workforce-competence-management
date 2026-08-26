@@ -5,6 +5,16 @@ A full-stack workforce-planning and competence-management prototype for **employ
 [![CI](https://github.com/abla86/workforce-competence-management/actions/workflows/ci.yml/badge.svg)](https://github.com/abla86/workforce-competence-management/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/abla86/workforce-competence-management/actions/workflows/codeql.yml/badge.svg)](https://github.com/abla86/workforce-competence-management/actions/workflows/codeql.yml)
 
+## Start here
+
+- **Live demo:** https://workforce-frontend.onrender.com
+- **User guide:** [docs/USER-GUIDE.md](docs/USER-GUIDE.md)
+- **API guide:** [docs/API.md](docs/API.md)
+- **Test matrix:** [docs/TEST-MATRIX.md](docs/TEST-MATRIX.md)
+- **Security:** [README-SECURITY.md](README-SECURITY.md)
+- **Production readiness:** [docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md)
+- **Worklog:** [PORTFOLIO-WORKLOG.md](PORTFOLIO-WORKLOG.md)
+
 ## Status at a glance
 
 **Prototype 2 — verified runnable full-stack prototype.**
@@ -71,6 +81,12 @@ The live deployment uses a demo datastore and automatic demo login. It is intend
 
 The system is **decision support**. It does not replace professional judgement, collective agreements, local staffing rules or organisational responsibility.
 
+### Resilience and safe integration
+
+The frontend uses one shared API communication layer for the application's data flow. Read-only requests can recover automatically from transient network failures and selected gateway/service-limit responses, while state-changing requests are deliberately **not** retried automatically to avoid duplicate writes. Request timeouts and structured error metadata, including an API request identifier when provided by the server, are surfaced to the UI for diagnosis.
+
+This is resilience against transient technical failure; it is **not** a claim of automatic recovery from application defects, data corruption or infrastructure failure.
+
 ## Data & Reports
 
 The frontend includes:
@@ -100,6 +116,8 @@ The application exposes the reasons behind the status instead of relying on colo
 
 ```text
 React + Vite
+    ↓
+Shared frontend API client with controlled recovery
     ↓
 ASP.NET Core Minimal API (.NET 10)
     ↓
@@ -189,6 +207,7 @@ Do not suppress EF pending-model warnings. A migration/model mismatch must be co
 - [Production Readiness](docs/PRODUCTION-READINESS.md)
 - [Security](README-SECURITY.md)
 - [Upgrade Guide](README-UPGRADE.md)
+- [Worklog](PORTFOLIO-WORKLOG.md)
 
 ## Employer / portfolio evidence
 
@@ -198,6 +217,7 @@ This project demonstrates:
 - modelling of competence and staffing rules
 - REST API and database engineering
 - automated testing and verification
+- resilient frontend/API communication with safe retry boundaries
 - Docker and CI/CD workflows
 - explicit security and production boundaries
 - decision-support design that exposes reasons rather than hiding them behind a status colour
