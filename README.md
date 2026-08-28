@@ -246,3 +246,7 @@ Anne Beth Andersen
 ## Portfolio
 
 https://abla86.github.io/developer-portfolio/
+
+## Change-control audit
+
+See [docs/REPOSITORY-CHANGE-AUDIT-2026-08-28.md](docs/REPOSITORY-CHANGE-AUDIT-2026-08-28.md) for the repository change-control and traceability record.
