@@ -19,6 +19,7 @@ permissions:
 
 jobs:
   dependency-review:
+    if: github.event.repository.visibility == 'public'
     runs-on: ubuntu-latest
     steps:
       - name: Dependency review
