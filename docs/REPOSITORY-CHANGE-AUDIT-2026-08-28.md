@@ -17,12 +17,6 @@ For every material change:
 4. test/build/verification evidence;
 5. README/status statement consistent with the evidence.
 
-## Protected baseline
-Existing project content is the baseline. A difference from another copy, older working document, or local checkout is **not** permission to overwrite, delete, move, refactor, reformat, replace dependencies, or alter architecture.
-
-## No hidden scope
-A task limited to one test means only that test is changed unless the user explicitly authorises additional work. Cleanup or improvements outside the requested scope are not implicitly authorised.
-
 ## Truthfulness rule
 No claim of "fixed", "complete", "secure", "production-ready", or "verified" may be made without corresponding evidence.
 
@@ -31,6 +25,3 @@ If a change was made and later reverted, both events remain traceable. A revert 
 
 ## Audit limitation
 Where the original working document or request is unavailable, this audit must mark authorisation as **not established**, rather than guessing.
-
-## Freeze rule
-Until an unexplained material change is reconciled with its originating work record, do not make further functional changes merely to make the repository appear consistent.
