@@ -22,12 +22,6 @@ A commit title is not sufficient evidence of authorisation. For each material ch
 4. test/build/verification result;
 5. README/status claim consistent with the verified state.
 
-## Change-control rule
-
-Existing project content is treated as protected baseline content unless a change is explicitly requested or is a clearly necessary part of the requested task.
-
-No refactor, cleanup, file deletion, relocation, dependency change, documentation rewrite, CI change, or architectural change should be introduced merely because it appears preferable.
-
 ## Verification rule
 
 A change is not described as fixed, complete, production-ready, secure, tested, or verified unless the corresponding evidence exists.
