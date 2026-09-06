@@ -27,7 +27,7 @@ The repository is suitable for local demonstrations, controlled internal testing
 
 The last completed full-stack verification before the current fixes recorded:
 
-- **18/18 backend tests passed**
+- **19/19 backend tests passed**
 - EF model/migration validation passed with no pending model changes
 - frontend lint and production build passed
 - Docker Compose build passed
@@ -198,7 +198,7 @@ See [README-SECURITY.md](README-SECURITY.md), [docs/DEPLOYMENT.md](docs/DEPLOYME
 
 GitHub Actions verifies the documented backend, frontend and Docker workflow, including EF migration state, health checks, authentication and workforce smoke flows, plus CodeQL analysis.
 
-The backend contains **18 xUnit tests**, and the latest completed full-stack verification passed all 18. The current main branch also includes coverage for the shared scheduling-policy baseline. The frontend has lint/build validation; a dedicated component/E2E suite is not claimed.
+The backend contains **19 xUnit tests**, and the latest completed full-stack verification passed all 18. The current main branch also includes coverage for the shared scheduling-policy baseline. The frontend has lint/build validation; a dedicated component/E2E suite is not claimed.
 
 See [docs/TEST-MATRIX.md](docs/TEST-MATRIX.md).
 
