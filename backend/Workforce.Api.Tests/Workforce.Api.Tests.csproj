@@ -16,7 +16,7 @@
 main
     <PackageReference Include="xunit.v3.core" Version="3.2.2" />
     <PackageReference Include="xunit.v3.assert" Version="3.2.2" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="3.0.2">
+    <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0">
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
   </ItemGroup>
