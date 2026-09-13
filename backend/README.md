@@ -20,7 +20,7 @@ ASP.NET Core Minimal API for the Workforce & Competence Management prototype.
 - .NET 10
 - ASP.NET Core Minimal API
 - Entity Framework Core 10
-- SQL Server
+- SQL Server 2022
 - JWT authentication in an HTTP-only cookie
 - xUnit v3 tests
 
@@ -39,9 +39,10 @@ The API applies pending EF Core migrations before seed data is inserted.
 
 The repository uses checked-in EF Core migrations rather than `EnsureCreated()`.
 
-Migration files:
+Current baseline:
 
-- `Migrations/20260821210000_InitialCreate.cs`
+- `Migrations/20260822161018_InitialCreate.cs`
+- `Migrations/20260822161018_InitialCreate.Designer.cs`
 - `Migrations/AppDbContextModelSnapshot.cs`
 
 For a clean local database after an older `EnsureCreated()` version:
@@ -73,7 +74,7 @@ http://localhost:5080/openapi/v1.json
 dotnet test ../Workforce.Api.Tests/Workforce.Api.Tests.csproj --configuration Release
 ```
 
-The current test project contains **18 xUnit tests**: 16 core coverage/planning tests plus 2 database-backed availability regression tests. The regression suite covers the dashboard/list availability-evaluation bug and overlap detection for shifts without explicit start times.
+The current test project contains **18 xUnit tests**, all passing in the final local verification. The suite covers coverage/planning rules and database-backed availability regression scenarios.
 
 ## Main services
 

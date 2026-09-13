@@ -4,7 +4,13 @@ The application uses EF Core migrations for schema management.
 
 ## Current baseline
 
-`20260821210000_InitialCreate` is the checked-in baseline for the current domain model. It creates the employee, competence, absence, shift, staffing, audit and authentication tables plus their indexes and relationships.
+`20260822161018_InitialCreate` is the checked-in baseline for the current domain model. It creates the employee, competence, absence, shift, staffing, audit and authentication tables plus their indexes and relationships.
+
+The baseline consists of:
+
+- `20260822161018_InitialCreate.cs`
+- `20260822161018_InitialCreate.Designer.cs`
+- `AppDbContextModelSnapshot.cs`
 
 ## Clean local database
 

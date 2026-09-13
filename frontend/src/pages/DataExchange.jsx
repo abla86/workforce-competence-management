@@ -1,167 +1,114 @@
-function downloadBlob(content, filename, type) {
-  const blob = new Blob([content], { type });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 0);
-}
+import { useState } from "react";
 
-function csvCell(value) {
-  const text = value == null ? "" : String(value);
-  return `"${text.replaceAll('"', '""')}"`;
-}
+const key = (v) => String(v ?? "").trim().toLowerCase();
+const num = (v, fallback = 0) => { const n = Number(String(v ?? "").replace(",", ".").replace("%", "")); return Number.isFinite(n) ? n : fallback; };
+const isoDate = (v) => { const s = String(v ?? "").slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null; };
+const clock = (v) => { const s = String(v ?? "").slice(0, 5); return /^\d{2}:\d{2}$/.test(s) ? s : null; };
 
-function rowsToCsv(headers, rows) {
-  return [headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n");
-}
-
-function htmlCell(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
-function icsText(value) {
-  return String(value ?? "")
-    .replaceAll("\\", "\\\\")
-    .replaceAll(";", "\\;")
-    .replaceAll(",", "\\,")
-    .replaceAll(/\r?\n/g, "\\n");
-}
-
-function icsLocalDateTime(date, start, hours) {
-  const dateText = String(date || "").slice(0, 10);
-  const startText = String(start || "08:00").slice(0, 5);
-  const [year, month, day] = dateText.split("-").map(Number);
-  const [hour, minute] = startText.split(":").map(Number);
-  if (![year, month, day, hour, minute].every(Number.isFinite)) throw new Error("Shift contains an invalid date or start time.");
-  const startDate = new Date(year, month - 1, day, hour, minute, 0, 0);
-  if (Number.isNaN(startDate.getTime())) throw new Error("Shift contains an invalid date or start time.");
-  const endDate = new Date(startDate.getTime() + Number(hours || 0) * 60 * 60 * 1000);
-  const fmt = (d) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}T${String(d.getHours()).padStart(2, "0")}${String(d.getMinutes()).padStart(2, "0")}00`;
-  return [fmt(startDate), fmt(endDate)];
-}
-
-function shiftToIcs(shift) {
-  const [dtStart, dtEnd] = icsLocalDateTime(shift.date || shift.Date, shift.startTime || shift.StartTime, Number(shift.hours || shift.Hours || 0));
-  const id = shift.id || shift.Id;
-  const type = shift.shiftType || shift.ShiftType || "Shift";
-  const department = shift.department || shift.Department || "";
-  return [
-    "BEGIN:VEVENT",
-    `UID:workforce-shift-${icsText(id)}@workforce-competence`,
-    `DTSTART:${dtStart}`,
-    `DTEND:${dtEnd}`,
-    `SUMMARY:${icsText(type)}`,
-    `DESCRIPTION:${icsText(`Department: ${department}; Minimum staffing: ${shift.minimumStaff || shift.MinimumStaff || 0}`)}`,
-    "END:VEVENT",
-  ].join("\r\n");
-}
-
-function validateImport(data) {
-  if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("Invalid JSON backup format.");
-  if (data.version && String(data.version) !== "1.0") throw new Error(`Unsupported backup version: ${data.version}`);
-  if (!Array.isArray(data.employees) && !Array.isArray(data.competences)) throw new Error("JSON backup must contain employees and/or competences arrays.");
-  if ((data.employees || []).length > 1000 || (data.competences || []).length > 1000) throw new Error("Import is limited to 1000 records per collection.");
-  for (const c of data.competences || []) {
-    if (!c || typeof c !== "object" || !String(c.name || "").trim()) throw new Error("Every competence must contain a name.");
+function csvRows(text) {
+  const rows = []; let row = []; let cell = ""; let quoted = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const c = text[i];
+    if (c === '"') { if (quoted && text[i + 1] === '"') { cell += '"'; i += 1; } else quoted = !quoted; }
+    else if (c === "," && !quoted) { row.push(cell); cell = ""; }
+    else if ((c === "\n" || c === "\r") && !quoted) {
+      if (c === "\r" && text[i + 1] === "\n") i += 1;
+      row.push(cell); if (row.some((x) => x.trim())) rows.push(row); row = []; cell = "";
+    } else cell += c;
   }
-  for (const e of data.employees || []) {
-    if (!e || typeof e !== "object" || !String(e.name || "").trim() || !String(e.role || "").trim()) throw new Error("Every employee must contain a name and role.");
-    const percent = Number(e.positionPercent ?? 100);
-    if (!Number.isFinite(percent) || percent <= 0 || percent > 100) throw new Error("Employee positionPercent must be between 1 and 100.");
-  }
+  if (cell || row.length) { row.push(cell); if (row.some((x) => x.trim())) rows.push(row); }
+  if (!rows.length) return [];
+  const headers = rows[0].map((x) => key(x).replaceAll(" ", ""));
+  return rows.slice(1).map((values) => Object.fromEntries(headers.map((h, i) => [h, (values[i] ?? "").trim()])));
 }
 
-export default function DataExchange({ employees, competences, shifts, api, mutate }) {
-  function exportJson() {
-    const payload = { exportedAtUtc: new Date().toISOString(), version: "1.0", employees, competences, shifts };
-    downloadBlob(JSON.stringify(payload, null, 2), "workforce-backup.json", "application/json;charset=utf-8");
+const field = (row, ...names) => {
+  for (const n of names) {
+    const v = row[key(n).replaceAll(" ", "")];
+    if (v !== undefined && v !== "") return v;
   }
+  return "";
+};
 
-  function exportEmployees() {
-    const rows = employees.map((e) => [e.id, e.name, e.role, e.department, e.positionPercent, e.maxWeeklyHours, e.isActive]);
-    downloadBlob(rowsToCsv(["Id", "Name", "Role", "Department", "PositionPercent", "MaxWeeklyHours", "IsActive"], rows), "employees.csv", "text/csv;charset=utf-8");
-  }
+function csvToPayload(text) {
+  const rows = csvRows(text);
+  if (!rows.length) throw new Error("CSV-filen er tom.");
+  const headers = Object.keys(rows[0]);
+  const isCompetence = headers.includes("competencename") || headers.includes("competence");
+  const isShift = headers.includes("date") && (headers.includes("shifttype") || headers.includes("shift"));
+  if (isCompetence) return { employees: [], competences: rows.map((r) => ({ name: field(r, "CompetenceName", "Competence", "Name"), category: field(r, "Category") || "General" })), shifts: [] };
+  if (isShift) return { employees: [], competences: [], shifts: rows.map((r) => ({ date: isoDate(field(r, "Date")), startTime: clock(field(r, "StartTime", "Start")), shiftType: field(r, "ShiftType", "Shift", "Type") || "Shift", department: field(r, "Department"), hours: num(field(r, "Hours"), 8), minimumStaff: num(field(r, "MinimumStaff", "Minimum"), 1), isCritical: key(field(r, "IsCritical")) === "true", isPublished: key(field(r, "IsPublished")) === "true" })) };
+  return { employees: rows.map((r) => ({ name: field(r, "Name", "Employee", "EmployeeName"), role: field(r, "Role", "Position", "JobTitle"), department: field(r, "Department"), authorization: field(r, "Authorization"), positionPercent: num(field(r, "PositionPercent", "Percent"), 100), maxWeeklyHours: num(field(r, "MaxWeeklyHours", "WeeklyHours"), 37.5), isActive: key(field(r, "IsActive")) !== "false" })), competences: [], shifts: [] };
+}
 
-  function exportCompetences() {
-    const rows = competences.map((c) => [c.id, c.name, c.category]);
-    downloadBlob(rowsToCsv(["Id", "Name", "Category"], rows), "competences.csv", "text/csv;charset=utf-8");
-  }
+function jsonToPayload(data) {
+  const employees = (data.employees || data.Employees || []).map((e) => ({ name: e.name || e.Name, role: e.role || e.Role, department: e.department || e.Department || "", authorization: e.authorization || e.Authorization || "", positionPercent: num(e.positionPercent ?? e.PositionPercent, 100), maxWeeklyHours: num(e.maxWeeklyHours ?? e.MaxWeeklyHours, 37.5), isActive: e.isActive ?? e.IsActive ?? true, competences: (e.competences || e.Competences || []).map((c) => ({ name: c.name || c.Name, level: c.level || c.Level || "Basic", validUntil: c.validUntil || c.ValidUntil || null })) }));
+  const competences = (data.competences || data.Competences || []).map((c) => ({ name: c.name || c.Name, category: c.category || c.Category || "General" }));
+  const shifts = (data.shifts || data.Shifts || []).map((s) => ({ date: isoDate(s.date || s.Date), startTime: clock(s.startTime || s.StartTime), shiftType: s.shiftType || s.ShiftType || "Shift", department: s.department || s.Department || "", hours: num(s.hours ?? s.Hours, 8), minimumStaff: num(s.minimumStaff ?? s.MinimumStaff, 1), isCritical: Boolean(s.isCritical ?? s.IsCritical), isPublished: Boolean(s.isPublished ?? s.IsPublished), assignments: (s.assignments || s.Assignments || []).map((a) => a.name ? `${a.name}|${a.role || ""}` : String(a)), requirements: (s.requirements || s.Requirements || []).map((r) => ({ competenceName: r.competenceName || r.Competence?.Name || r.name, minimumCount: num(r.minimumCount ?? r.MinimumCount, 1), minimumLevel: r.minimumLevel || r.MinimumLevel || "Basic", requiredRole: r.requiredRole || r.RequiredRole || null, isCritical: Boolean(r.isCritical ?? r.IsCritical) })) }));
+  return { employees, competences, shifts };
+}
 
-  function exportShifts() {
-    const rows = shifts.map((s) => [s.id, s.date, s.shiftType, s.department, s.startTime, s.hours, s.minimumStaff, s.overallStatus, s.competenceCoverage]);
-    downloadBlob(rowsToCsv(["Id", "Date", "ShiftType", "Department", "StartTime", "Hours", "MinimumStaff", "Status", "CompetenceCoverage"], rows), "shift-plan.csv", "text/csv;charset=utf-8");
-  }
+export default function DataExchange({ api, mutate }) {
+  const [preview, setPreview] = useState(null);
+  const [fileName, setFileName] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
 
-  function exportCalendar() {
+  async function inspect(file) {
+    setLoading(true); setMessage(""); setError(""); setFileName(file.name);
     try {
-      const body = shifts.map(shiftToIcs).join("\r\n");
-      downloadBlob(`BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Workforce Competence Management//EN\r\nCALSCALE:GREGORIAN\r\nMETHOD:PUBLISH\r\n${body}\r\nEND:VCALENDAR\r\n`, "shift-plan.ics", "text/calendar;charset=utf-8");
-    } catch (error) {
-      mutate(async () => { throw error; }, "Calendar export failed.");
-    }
+      const text = await file.text();
+      const payload = file.name.toLowerCase().endsWith(".json") ? jsonToPayload(JSON.parse(text)) : csvToPayload(text);
+      if (!payload.employees.length && !payload.competences.length && !payload.shifts.length) throw new Error("Filen inneholder ingen gjenkjennelige data.");
+      const counts = { employees: payload.employees.length, competences: payload.competences.length, shifts: payload.shifts.length };
+      let server = null;
+      if (api.migrationInspect) {
+        try { server = await api.migrationInspect(file); } catch (err) { server = { warning: err.message }; }
+      }
+      setPreview({ payload, counts, server });
+    } catch (err) { setPreview(null); setError(err.message || "Filen kunne ikke kontrolleres."); }
+    finally { setLoading(false); }
   }
 
-  function exportHtml() {
-    const rows = shifts.map((s) => `<tr><td>${htmlCell(s.date)}</td><td>${htmlCell(s.shiftType)}</td><td>${htmlCell(s.department)}</td><td>${htmlCell(s.minimumStaff)}</td><td>${htmlCell(s.overallStatus)}</td><td>${htmlCell(s.competenceCoverage)}%</td></tr>`).join("");
-    const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Workforce shift plan</title><meta name="robots" content="noindex,nofollow"><style>body{font-family:system-ui;margin:32px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:8px;text-align:left}th{background:#eee}</style></head><body><h1>Workforce shift plan</h1><p>Generated ${htmlCell(new Date().toLocaleString())}</p><table><thead><tr><th>Date</th><th>Shift</th><th>Department</th><th>Minimum staff</th><th>Status</th><th>Competence coverage</th></tr></thead><tbody>${rows}</tbody></table></body></html>`;
-    downloadBlob(html, "shift-plan.html", "text/html;charset=utf-8");
+  function importData() {
+    if (!preview) return;
+    setLoading(true);
+    mutate(() => api.migrationImport(preview.payload), "Import kontrollert og sendt til API-et.");
+    setLoading(false);
+    setMessage("Importforespørselen er sendt. Resultatet håndteres av API-valideringen.");
   }
-
-  async function importJson(file) {
-    if (file.size > 5 * 1024 * 1024) throw new Error("Import file is limited to 5 MB.");
-    const text = await file.text();
-    const data = JSON.parse(text);
-    validateImport(data);
-    const competenceByName = new Map(competences.map((c) => [String(c.name).trim().toLowerCase(), c]));
-    let created = 0;
-    for (const c of data.competences || []) {
-      const name = String(c.name).trim();
-      if (competenceByName.has(name.toLowerCase())) continue;
-      await api.createCompetence({ name, category: String(c.category || "General").trim() });
-      competenceByName.set(name.toLowerCase(), c);
-      created += 1;
-    }
-    for (const e of data.employees || []) {
-      await api.createEmployee({ name: String(e.name).trim(), role: String(e.role).trim(), positionPercent: Number(e.positionPercent ?? 100) });
-      created += 1;
-    }
-    await mutate(async () => {}, `Import complete: ${created} records submitted.`);
-  }
-
-  function handleImport(event) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    importJson(file).catch((error) => mutate(async () => { throw error; }, error.message || "Import failed."));
-    event.target.value = "";
-  }
-
-  const secondary = "primary-button secondary";
 
   return (
-    <section>
-      <div className="page-heading"><div><div className="kicker">Operations</div><h1>Data & Reports</h1><p>Export operational data for analysis, sharing, backup and calendar use.</p></div></div>
-      <div className="management-columns">
-        <article className="panel"><div className="panel-heading"><div><h2>Exports</h2><p>Browser-side files from the current authenticated dataset.</p></div></div><div className="card-actions">
-          <button className="primary-button" onClick={exportJson}>JSON backup</button>
-          <button className={secondary} onClick={exportEmployees}>Employees CSV</button>
-          <button className={secondary} onClick={exportCompetences}>Competence CSV</button>
-          <button className={secondary} onClick={exportShifts}>Shift plan CSV</button>
-          <button className={secondary} onClick={exportCalendar}>Calendar ICS</button>
-          <button className={secondary} onClick={exportHtml}>Share HTML</button>
-          <button className={secondary} onClick={() => window.print()}>Print / PDF</button>
-        </div><p className="muted">Exports contain operational employee data. Treat downloaded files as confidential and store them only in approved locations.</p></article>
-        <article className="panel"><div className="panel-heading"><div><h2>Import</h2><p>Controlled JSON import for employees and competences.</p></div></div><p>Files are limited to 5 MB and 1000 records per collection. Existing competence names are not duplicated. Employee records are added as new records. Shift assignments are intentionally not imported automatically.</p><label className={secondary} htmlFor="backup-import">Choose JSON backup</label><input id="backup-import" type="file" accept="application/json,.json" onChange={handleImport} hidden /></article>
+    <div>
+      <div className="page-heading">
+        <div><p className="kicker">Data</p><h1>Datautveksling</h1><p>Kontroller filen først. Import skjer først etter at format og innhold er gjennomgått.</p></div>
       </div>
-      <article className="panel" style={{ marginTop: 16 }}><div className="panel-heading"><div><h2>Current dataset</h2><p>Records currently loaded from the API.</p></div></div><div className="metrics"><div className="metric-card"><strong>{employees.length}</strong><small>employees</small></div><div className="metric-card"><strong>{competences.length}</strong><small>competences</small></div><div className="metric-card"><strong>{shifts.length}</strong><small>shifts</small></div></div></article>
-    </section>
+
+      <section className="editor-panel">
+        <h2>Importer data</h2>
+        <p className="muted">Støtter kontrollert CSV- og JSON-import. Ingen automatisk overskriving skjer før importkallet når API-et.</p>
+        <input type="file" accept=".csv,.json,text/csv,application/json" onChange={(e) => e.target.files?.[0] && inspect(e.target.files[0])} disabled={loading} />
+        {fileName && <p><strong>Fil:</strong> {fileName}</p>}
+        {loading && <p className="muted">Kontrollerer…</p>}
+        {error && <div className="toast error">{error}</div>}
+        {message && <div className="toast success">{message}</div>}
+
+        {preview && <div className="editor-panel" style={{ marginTop: "18px", marginBottom: 0 }}>
+          <p className="kicker">Forhåndskontroll</p>
+          <h3>Data som vil sendes</h3>
+          <div className="metrics">
+            <div><strong>{preview.counts.employees}</strong><span>ansatte</span></div>
+            <div><strong>{preview.counts.competences}</strong><span>kompetanser</span></div>
+            <div><strong>{preview.counts.shifts}</strong><span>vakter</span></div>
+          </div>
+          {preview.server?.warning && <p className="muted">API-forhåndskontroll: {preview.server.warning}</p>}
+          <div className="form-actions">
+            <button className="primary-button" onClick={importData} disabled={loading}>Importer</button>
+            <button className="icon-button" onClick={() => { setPreview(null); setFileName(""); }}>Nullstill</button>
+          </div>
+        </div>}
+      </section>
+    </div>
   );
 }

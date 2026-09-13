@@ -5,15 +5,38 @@ namespace Workforce.Api.Data;
 
 public static class SeedData
 {
+    private const string DemoUsername = "demo";
+
     public static async Task InitializeAsync(AppDbContext db)
     {
-        // Self-healing bootstrap for the prototype: the current repository intentionally
-        // has an empty Migrations folder. MigrateAsync() is therefore a no-op and cannot
-        // create the model tables. EnsureCreatedAsync() creates the schema when it is absent.
-        // Once real migrations are introduced, the migration path remains the source of truth.
-        var migrations = await db.Database.GetMigrationsAsync();
-        if (!migrations.Any())
-            await db.Database.EnsureCreatedAsync();
+        if (string.Equals(Environment.GetEnvironmentVariable("DEMO_MODE"), "true", StringComparison.OrdinalIgnoreCase))
+        {
+            var demoPassword = Environment.GetEnvironmentVariable("DEMO_PASSWORD");
+            if (string.IsNullOrWhiteSpace(demoPassword) || demoPassword.Length < 12)
+                throw new InvalidOperationException("DEMO_PASSWORD must be configured with at least 12 characters when DEMO_MODE=true.");
+
+            var demoUser = await db.UserAccounts.SingleOrDefaultAsync(x => x.Username == DemoUsername);
+            if (demoUser is null)
+            {
+                db.UserAccounts.Add(new UserAccount
+                {
+                    Username = DemoUsername,
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword(demoPassword, 12),
+                    Role = "Admin",
+                    IsActive = true
+                });
+            }
+            else
+            {
+                demoUser.PasswordHash = BCrypt.Net.BCrypt.HashPassword(demoPassword, 12);
+                demoUser.Role = "Admin";
+                demoUser.IsActive = true;
+                demoUser.FailedLoginAttempts = 0;
+                demoUser.LockedUntilUtc = null;
+            }
+
+            await db.SaveChangesAsync();
+        }
 
         if (await db.Employees.AnyAsync())
             return;
