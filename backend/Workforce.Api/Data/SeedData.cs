@@ -5,9 +5,38 @@ namespace Workforce.Api.Data;
 
 public static class SeedData
 {
+    private const string DemoUsername = "demo";
+
     public static async Task InitializeAsync(AppDbContext db)
     {
-        await db.Database.EnsureCreatedAsync();
+        if (string.Equals(Environment.GetEnvironmentVariable("DEMO_MODE"), "true", StringComparison.OrdinalIgnoreCase))
+        {
+            var demoPassword = Environment.GetEnvironmentVariable("DEMO_PASSWORD");
+            if (string.IsNullOrWhiteSpace(demoPassword) || demoPassword.Length < 12)
+                throw new InvalidOperationException("DEMO_PASSWORD must be configured with at least 12 characters when DEMO_MODE=true.");
+
+            var demoUser = await db.UserAccounts.SingleOrDefaultAsync(x => x.Username == DemoUsername);
+            if (demoUser is null)
+            {
+                db.UserAccounts.Add(new UserAccount
+                {
+                    Username = DemoUsername,
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword(demoPassword, 12),
+                    Role = "Admin",
+                    IsActive = true
+                });
+            }
+            else
+            {
+                demoUser.PasswordHash = BCrypt.Net.BCrypt.HashPassword(demoPassword, 12);
+                demoUser.Role = "Admin";
+                demoUser.IsActive = true;
+                demoUser.FailedLoginAttempts = 0;
+                demoUser.LockedUntilUtc = null;
+            }
+
+            await db.SaveChangesAsync();
+        }
 
         if (await db.Employees.AnyAsync())
             return;
@@ -21,7 +50,6 @@ public static class SeedData
             new Competence { Name = "Team leadership", Category = "Leadership" },
             new Competence { Name = "Quality improvement", Category = "Quality" }
         };
-
         db.Competences.AddRange(competences);
         await db.SaveChangesAsync();
 
@@ -34,26 +62,24 @@ public static class SeedData
             new Employee { Name = "Ola Berg", Role = "Associate", PositionPercent = 50 },
             new Employee { Name = "Mina Solheim", Role = "Team Lead", PositionPercent = 100 }
         };
-
         db.Employees.AddRange(employees);
         await db.SaveChangesAsync();
 
         db.EmployeeCompetences.AddRange(
-            new EmployeeCompetence { EmployeeId = employees[0].Id, CompetenceId = competences[0].Id, Level = "Advanced" },
-            new EmployeeCompetence { EmployeeId = employees[0].Id, CompetenceId = competences[1].Id, Level = "Advanced" },
-            new EmployeeCompetence { EmployeeId = employees[0].Id, CompetenceId = competences[5].Id, Level = "Intermediate" },
-            new EmployeeCompetence { EmployeeId = employees[1].Id, CompetenceId = competences[1].Id, Level = "Intermediate" },
-            new EmployeeCompetence { EmployeeId = employees[1].Id, CompetenceId = competences[2].Id, Level = "Advanced" },
-            new EmployeeCompetence { EmployeeId = employees[2].Id, CompetenceId = competences[2].Id, Level = "Intermediate" },
-            new EmployeeCompetence { EmployeeId = employees[3].Id, CompetenceId = competences[0].Id, Level = "Intermediate" },
-            new EmployeeCompetence { EmployeeId = employees[3].Id, CompetenceId = competences[3].Id, Level = "Advanced", ValidUntil = DateOnly.FromDateTime(DateTime.Today.AddDays(30)) },
-            new EmployeeCompetence { EmployeeId = employees[4].Id, CompetenceId = competences[3].Id, Level = "Basic" },
-            new EmployeeCompetence { EmployeeId = employees[5].Id, CompetenceId = competences[4].Id, Level = "Advanced" },
-            new EmployeeCompetence { EmployeeId = employees[5].Id, CompetenceId = competences[5].Id, Level = "Advanced" }
+            new EmployeeCompetence { EmployeeId = employees[0].Id, CompetenceId = competences[0].Id, Level = CompetenceLevel.Advanced },
+            new EmployeeCompetence { EmployeeId = employees[0].Id, CompetenceId = competences[1].Id, Level = CompetenceLevel.Advanced },
+            new EmployeeCompetence { EmployeeId = employees[0].Id, CompetenceId = competences[5].Id, Level = CompetenceLevel.Intermediate },
+            new EmployeeCompetence { EmployeeId = employees[1].Id, CompetenceId = competences[1].Id, Level = CompetenceLevel.Intermediate },
+            new EmployeeCompetence { EmployeeId = employees[1].Id, CompetenceId = competences[2].Id, Level = CompetenceLevel.Advanced },
+            new EmployeeCompetence { EmployeeId = employees[2].Id, CompetenceId = competences[2].Id, Level = CompetenceLevel.Intermediate },
+            new EmployeeCompetence { EmployeeId = employees[3].Id, CompetenceId = competences[0].Id, Level = CompetenceLevel.Intermediate },
+            new EmployeeCompetence { EmployeeId = employees[3].Id, CompetenceId = competences[3].Id, Level = CompetenceLevel.Advanced, ValidUntil = DateOnly.FromDateTime(DateTime.Today.AddDays(30)) },
+            new EmployeeCompetence { EmployeeId = employees[4].Id, CompetenceId = competences[3].Id, Level = CompetenceLevel.Basic },
+            new EmployeeCompetence { EmployeeId = employees[5].Id, CompetenceId = competences[4].Id, Level = CompetenceLevel.Advanced },
+            new EmployeeCompetence { EmployeeId = employees[5].Id, CompetenceId = competences[5].Id, Level = CompetenceLevel.Advanced }
         );
 
         var today = DateOnly.FromDateTime(DateTime.Today);
-
         var shifts = new[]
         {
             new Shift { Date = today, ShiftType = "Day", Hours = 7.5m, MinimumStaff = 3 },
@@ -61,7 +87,6 @@ public static class SeedData
             new Shift { Date = today, ShiftType = "Night", Hours = 10m, MinimumStaff = 2 },
             new Shift { Date = today.AddDays(1), ShiftType = "Day", Hours = 7.5m, MinimumStaff = 3 }
         };
-
         db.Shifts.AddRange(shifts);
         await db.SaveChangesAsync();
 
@@ -78,16 +103,14 @@ public static class SeedData
             new ShiftAssignment { ShiftId = shifts[3].Id, EmployeeId = employees[2].Id },
             new ShiftAssignment { ShiftId = shifts[3].Id, EmployeeId = employees[5].Id }
         );
-
         db.ShiftRequirements.AddRange(
-            new ShiftRequirement { ShiftId = shifts[0].Id, CompetenceId = competences[1].Id, MinimumCount = 1, MinimumLevel = "Intermediate" },
-            new ShiftRequirement { ShiftId = shifts[0].Id, CompetenceId = competences[4].Id, MinimumCount = 1, MinimumLevel = "Advanced" },
-            new ShiftRequirement { ShiftId = shifts[1].Id, CompetenceId = competences[0].Id, MinimumCount = 1, MinimumLevel = "Intermediate" },
-            new ShiftRequirement { ShiftId = shifts[1].Id, CompetenceId = competences[2].Id, MinimumCount = 1, MinimumLevel = "Intermediate" },
-            new ShiftRequirement { ShiftId = shifts[2].Id, CompetenceId = competences[0].Id, MinimumCount = 1, MinimumLevel = "Intermediate" },
-            new ShiftRequirement { ShiftId = shifts[3].Id, CompetenceId = competences[5].Id, MinimumCount = 1, MinimumLevel = "Intermediate" }
+            new ShiftRequirement { ShiftId = shifts[0].Id, CompetenceId = competences[1].Id, MinimumCount = 1, MinimumLevel = CompetenceLevel.Intermediate },
+            new ShiftRequirement { ShiftId = shifts[0].Id, CompetenceId = competences[4].Id, MinimumCount = 1, MinimumLevel = CompetenceLevel.Advanced },
+            new ShiftRequirement { ShiftId = shifts[1].Id, CompetenceId = competences[0].Id, MinimumCount = 1, MinimumLevel = CompetenceLevel.Intermediate },
+            new ShiftRequirement { ShiftId = shifts[1].Id, CompetenceId = competences[2].Id, MinimumCount = 1, MinimumLevel = CompetenceLevel.Intermediate },
+            new ShiftRequirement { ShiftId = shifts[2].Id, CompetenceId = competences[0].Id, MinimumCount = 1, MinimumLevel = CompetenceLevel.Intermediate },
+            new ShiftRequirement { ShiftId = shifts[3].Id, CompetenceId = competences[5].Id, MinimumCount = 1, MinimumLevel = CompetenceLevel.Intermediate }
         );
-
         await db.SaveChangesAsync();
     }
 }

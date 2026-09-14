@@ -1,49 +1,139 @@
+import { useState } from "react";
 import StatusBadge from "../components/StatusBadge.jsx";
 
-export default function Shifts({ shifts }) {
+const today = new Date().toISOString().slice(0, 10);
+
+export default function Shifts({ shifts, employees, competences, api, mutate }) {
+  const [showCreate, setShowCreate] = useState(false);
+  const [shiftForm, setShiftForm] = useState({ date: today, shiftType: "Day", hours: 7.5, minimumStaff: 2 });
+  const [manageShift, setManageShift] = useState(null);
+  const [employeeId, setEmployeeId] = useState("");
+  const [requirement, setRequirement] = useState({ competenceId: "", minimumCount: 1, minimumLevel: "Basic" });
+  const [candidates, setCandidates] = useState([]);
+  const [candidateLoading, setCandidateLoading] = useState(false);
+  const [coverage, setCoverage] = useState(null);
+  const [coverageLoading, setCoverageLoading] = useState(false);
+  const [scenario, setScenario] = useState(null);
+
+  function createShift(event) {
+    event.preventDefault();
+    mutate(() => api.createShift({ ...shiftForm, hours: Number(shiftForm.hours), minimumStaff: Number(shiftForm.minimumStaff) }), "Vakt opprettet.");
+    setShowCreate(false);
+  }
+
+  async function assignEmployee(employeeToAssign) {
+    const id = Number(employeeToAssign);
+    try {
+      await api.assignEmployee(current.id, id);
+    } catch (error) {
+      if (error.status !== 409 || !error.body?.requiresOverride) throw error;
+      const warnings = (error.body.warnings || []).join("\n");
+      const reason = window.prompt(`Systemet har registrert arbeids-/hviletidsvarsler:\n\n${warnings}\n\nSkriv begrunnelse for å fortsette. Dette lagres i endringsloggen:`);
+      if (!reason?.trim()) throw new Error("Tildelingen ble ikke overstyrt. Begrunnelse er påkrevd.");
+      await api.assignEmployee(current.id, id, reason.trim());
+    }
+  }
+
+  function addAssignment(event) {
+    event.preventDefault();
+    if (!manageShift || !employeeId) return;
+    mutate(() => assignEmployee(employeeId), "Ansatt tildelt.");
+    setEmployeeId("");
+  }
+
+  function addRequirement(event) {
+    event.preventDefault();
+    if (!manageShift || !requirement.competenceId) return;
+    mutate(() => api.setShiftRequirement(manageShift.id, {
+      competenceId: Number(requirement.competenceId), minimumCount: Number(requirement.minimumCount), minimumLevel: requirement.minimumLevel,
+    }), "Kompetansekrav lagret.");
+  }
+
+  async function openShift(shift) {
+    setManageShift(shift); setCandidates([]); setScenario(null); setCandidateLoading(true); setCoverageLoading(true);
+    try {
+      const [candidateData, coverageData] = await Promise.all([api.candidates(shift.id), api.coverage(shift.id)]);
+      setCandidates(candidateData); setCoverage(coverageData);
+    } catch { setCandidates([]); setCoverage(null); }
+    finally { setCandidateLoading(false); setCoverageLoading(false); }
+  }
+
+  async function analyzeCoverage() {
+    if (!current) return;
+    setCoverageLoading(true);
+    try { setCoverage(await api.coverage(current.id)); } finally { setCoverageLoading(false); }
+  }
+
+  async function runScenario(employeeToRemove) {
+    if (!current) return;
+    try { setScenario(await api.coverageScenario(current.id, [employeeToRemove])); } catch { setScenario(null); }
+  }
+
+  const current = manageShift ? shifts.find((shift) => shift.id === manageShift.id) || manageShift : null;
+  const eligibleCandidates = candidates.filter((c) => c.eligible).slice(0, 5);
+
   return (
     <>
-      <div className="page-heading">
-        <div>
-          <p className="kicker">Planning</p>
-          <h1>Shifts</h1>
-          <p>Staffing and competence requirements for planned work periods.</p>
+      <div className="page-heading action-heading">
+        <div><p className="kicker">Planlegging</p><h1>Vakter</h1><p>Opprett vakter, tildel ansatte og la systemet kontrollere kompetanse før tildeling.</p></div>
+        <button className="primary-button" onClick={() => setShowCreate(!showCreate)}>+ Ny vakt</button>
+      </div>
+
+      {showCreate && <section className="editor-panel"><div className="editor-title"><h2>Opprett vakt</h2><button className="icon-button" onClick={() => setShowCreate(false)}>Lukk</button></div>
+        <form className="form-grid" onSubmit={createShift}>
+          <label>Dato<input type="date" required value={shiftForm.date} onChange={(e) => setShiftForm({ ...shiftForm, date: e.target.value })} /></label>
+          <label>Vakt<select value={shiftForm.shiftType} onChange={(e) => setShiftForm({ ...shiftForm, shiftType: e.target.value })}><option>Day</option><option>Evening</option><option>Night</option></select></label>
+          <label>Timer<input type="number" step="0.5" min="0.5" max="24" value={shiftForm.hours} onChange={(e) => setShiftForm({ ...shiftForm, hours: e.target.value })} /></label>
+          <label>Minimum bemanning<input type="number" min="1" value={shiftForm.minimumStaff} onChange={(e) => setShiftForm({ ...shiftForm, minimumStaff: e.target.value })} /></label>
+          <div className="form-actions"><button className="primary-button">Opprett vakt</button></div>
+        </form>
+      </section>}
+
+      {current && <section className="editor-panel accent-panel">
+        <div className="editor-title"><div><p className="kicker">Vaktstyring</p><h2>{current.date} · {current.shiftType}</h2></div><button className="icon-button" onClick={() => setManageShift(null)}>Lukk</button></div>
+        <div className="management-columns">
+          <div>
+            <h3>Tildelte ansatte</h3>
+            <form className="inline-form" onSubmit={addAssignment}><select value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} required><option value="">Velg ansatt</option>{employees.filter((e) => e.isActive && !current.assignments.some((a) => a.employeeId === e.id)).map((e) => <option key={e.id} value={e.id}>{e.name} · {e.role}</option>)}</select><button className="primary-button">Tildel</button></form>
+            <div className="manage-list">{current.assignments.map((assignment) => <div className="manage-row" key={assignment.employeeId}><div><strong>{assignment.name}</strong><span>{assignment.role}</span></div><div className="row-actions"><button className="mini-button" onClick={() => runScenario(assignment.employeeId)}>Hva hvis?</button><button className="mini-danger" onClick={() => mutate(() => api.removeAssignment(current.id, assignment.employeeId), "Tildeling fjernet.")}>Fjern</button></div></div>)}</div>
+
+            <div className="editor-panel" style={{ marginTop: "18px", marginBottom: 0 }}>
+              <div className="panel-heading"><div><h3>Smart kandidatforslag</h3><p>Rangerer kvalifiserte ansatte og viser hvorfor andre ikke kan brukes. Arbeidstid/hviletid er varsler og kan overstyres med begrunnelse.</p></div></div>
+              {candidateLoading && <p className="muted">Analyserer tilgjengelighet, kompetanse og konflikter…</p>}
+              {!candidateLoading && eligibleCandidates.length === 0 && <p className="muted">Ingen kvalifiserte kandidater funnet.</p>}
+              {!candidateLoading && eligibleCandidates.map((candidate) => <div className="manage-row" key={candidate.employeeId}><div><strong>{candidate.name}</strong><span>{candidate.role} · score {candidate.score}{candidate.warnings?.length ? ` · ${candidate.warnings.length} varsel` : ""}</span></div><button className="primary-button secondary" onClick={() => mutate(() => assignEmployee(candidate.employeeId), "Beste kandidat tildelt.")}>Velg</button></div>)}
+            </div>
+          </div>
+
+          <div>
+            <h3>Kompetansekrav</h3>
+            <form className="requirement-form" onSubmit={addRequirement}><select required value={requirement.competenceId} onChange={(e) => setRequirement({ ...requirement, competenceId: e.target.value })}><option value="">Velg kompetanse</option>{competences.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select><input type="number" min="1" value={requirement.minimumCount} onChange={(e) => setRequirement({ ...requirement, minimumCount: e.target.value })} /><select value={requirement.minimumLevel} onChange={(e) => setRequirement({ ...requirement, minimumLevel: e.target.value })}><option>Basic</option><option>Intermediate</option><option>Advanced</option></select><button className="primary-button">Lagre krav</button></form>
+            <div className="manage-list">{current.requirements.map((r) => <div className={`manage-row status-row ${r.covered ? "covered-row" : "missing-row"}`} key={r.competenceId}><div><strong>{r.competence}</strong><span>{r.qualifiedCount}/{r.minimumCount} kvalifiserte · {r.minimumLevel}</span></div><div className="row-actions"><StatusBadge status={r.status} /><button className="mini-danger" onClick={() => mutate(() => api.removeShiftRequirement(current.id, r.competenceId), "Kompetansekrav fjernet.")}>×</button></div></div>)}</div>
+          </div>
         </div>
-      </div>
 
-      <div className="shift-grid">
-        {shifts.map((shift) => (
-          <article className={`shift-card ${shift.overallCovered ? "covered" : "gap"}`} key={shift.id}>
-            <div className="shift-top">
-              <div>
-                <span>{shift.date}</span>
-                <h3>{shift.shiftType}</h3>
-              </div>
-              <StatusBadge status={shift.overallStatus} />
-            </div>
+        {coverage && <div className="editor-panel" style={{ marginTop: "18px", marginBottom: 0 }}>
+          <div className="panel-heading"><div><p className="kicker">Coverage Engine</p><h3>Live dekning</h3><p>Evalueringen skjer i backend og inkluderer bemanning, kompetanse, fravær, dobbeltbooking og hviletid.</p></div><StatusBadge status={coverage.overallStatus} /></div>
+          <div className="metrics"><div><strong>{coverage.assignedStaff} / {coverage.minimumStaff}</strong><span>bemanning</span></div><div><strong>{coverage.competenceCoverage}%</strong><span>kompetansedekning</span></div><div><strong>{coverage.missingStaff}</strong><span>mangler bemanning</span></div></div>
+          {(coverage.warnings || []).length > 0 && <div className="action-list">{coverage.warnings.map((warning) => <div className="action-item" key={warning}><StatusBadge status={warning.startsWith("Kritisk") || warning.startsWith("Bemanning") ? "RED" : "YELLOW"} /><div>{warning}</div></div>)}</div>}
+          <div className="form-actions"><button className="primary-button secondary" onClick={analyzeCoverage} disabled={coverageLoading}>{coverageLoading ? "Analyserer…" : "Kjør ny evaluering"}</button></div>
+        </div>}
 
-            <div className="staffing-line">
-              <div>
-                <span>Staffing</span>
-                <strong>{shift.assignedStaff} / {shift.minimumStaff}</strong>
-              </div>
-              <StatusBadge status={shift.staffingStatus} />
-            </div>
+        {scenario && <div className="editor-panel" style={{ marginTop: "18px", marginBottom: 0 }}>
+          <div className="panel-heading"><div><p className="kicker">Scenarioanalyse</p><h3>Hva skjer hvis ansatt tas ut?</h3></div><StatusBadge status={scenario.coverageWithoutEmployees.overallStatus} /></div>
+          <p>{scenario.coverageWithoutEmployees.assignedStaff} / {scenario.coverageWithoutEmployees.minimumStaff} bemanning · {scenario.coverageWithoutEmployees.competenceCoverage}% kompetansedekning</p>
+          {(scenario.coverageWithoutEmployees.warnings || []).length > 0 && <ul>{scenario.coverageWithoutEmployees.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>}
+          <h4>Foreslåtte erstattere</h4>
+          {scenario.suggestedReplacements.length === 0 ? <p className="muted">Ingen kvalifisert erstatter funnet.</p> : <div className="manage-list">{scenario.suggestedReplacements.slice(0, 5).map((candidate) => <div className="manage-row" key={candidate.employeeId}><div><strong>{candidate.name}</strong><span>{candidate.role} · score {candidate.score}</span></div><button className="primary-button secondary" onClick={() => mutate(() => assignEmployee(candidate.employeeId), "Erstatter tildelt.")}>Tildel</button></div>)}</div>}
+        </div>}
+      </section>}
 
-            <div className="requirements">
-              {shift.requirements.map((r) => (
-                <div className="requirement" key={r.competenceId}>
-                  <div>
-                    <strong>{r.competence}</strong>
-                    <span>{r.qualifiedCount} / {r.minimumCount} · min. {r.minimumLevel}</span>
-                  </div>
-                  <StatusBadge status={r.status} />
-                </div>
-              ))}
-            </div>
-          </article>
-        ))}
-      </div>
+      <div className="shift-grid">{shifts.map((shift) => <article className={`shift-card ${shift.overallCovered ? "covered" : "gap"}`} key={shift.id}>
+        <div className="shift-top"><div><span>{shift.date} · {shift.hours} t</span><h3>{shift.shiftType}</h3></div><StatusBadge status={shift.overallStatus} /></div>
+        <div className={`coverage-banner ${shift.staffingCovered ? "green-banner" : "red-banner"}`}><div><span>Bemanning</span><strong>{shift.assignedStaff} / {shift.minimumStaff}</strong></div><StatusBadge status={shift.staffingStatus} /></div>
+        <div className="requirements">{shift.requirements.map((r) => <div className={`requirement ${r.covered ? "good-requirement" : "bad-requirement"}`} key={r.competenceId}><div><strong>{r.competence}</strong><span>{r.qualifiedCount} / {r.minimumCount} · min. {r.minimumLevel}</span></div><StatusBadge status={r.status} /></div>)}{shift.requirements.length === 0 && <p className="muted">Ingen kompetansekrav definert.</p>}</div>
+        <div className="shift-actions"><button className="primary-button secondary" onClick={() => openShift(shift)}>Administrer</button><button className="danger-button" onClick={() => { if (window.confirm(`Slette ${shift.date} ${shift.shiftType}?`)) mutate(() => api.deleteShift(shift.id), "Vakt slettet."); }}>Slett</button></div>
+      </article>)}</div>
     </>
   );
 }

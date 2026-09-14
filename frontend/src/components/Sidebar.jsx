@@ -4,6 +4,7 @@ const items = [
   ["competence", "Competence"],
   ["shifts", "Shifts"],
   ["gaps", "Gap Analysis"],
+  ["data", "Data & Reports"],
 ];
 
 export default function Sidebar({ page, setPage }) {
