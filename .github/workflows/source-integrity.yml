@@ -1,0 +1,37 @@
+name: Source integrity
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+      - name: Reject empty source files and implementation placeholders
+        shell: bash
+        run: |
+          set -euo pipefail
+          empty=0
+          placeholders=0
+          while IFS= read -r -d '' file; do
+            if [ ! -s "$file" ]; then
+              echo "EMPTY SOURCE: $file"
+              empty=1
+            fi
+            if grep -EIn '^[[:space:]]*(//|#|/\*|<!--)[[:space:]]*(TODO|FIXME|XXX|HACK|NOT IMPLEMENTED|COMING SOON|PLACEHOLDER)\b' "$file" >/dev/null 2>&1; then
+              echo "PLACEHOLDER SOURCE: $file"
+              placeholders=1
+            fi
+          done < <(find . -type f \( -name '*.cs' -o -name '*.csx' -o -name '*.js' -o -name '*.jsx' -o -name '*.ts' -o -name '*.tsx' -o -name '*.py' -o -name '*.java' -o -name '*.kt' -o -name '*.go' -o -name '*.rs' -o -name '*.cpp' -o -name '*.c' -o -name '*.h' -o -name '*.html' -o -name '*.css' -o -name '*.scss' -o -name '*.sql' -o -name '*.sh' -o -name '*.ps1' \) -not -path './.git/*' -print0)
+          [ "$empty" -eq 0 ] || exit 1
+          [ "$placeholders" -eq 0 ] || exit 1
