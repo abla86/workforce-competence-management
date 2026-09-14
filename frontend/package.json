@@ -9,13 +9,8 @@
     "lint": "eslint ."
   },
   "dependencies": {
- dependabot/npm_and_yarn/frontend/vitejs/plugin-react-6.0.5
     "@vitejs/plugin-react": "^6.0.5",
-    "vite": "^7.0.0",
-
-    "@vitejs/plugin-react": "^5.0.0",
     "vite": "^8.2.1",
- main
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
