@@ -1,6 +1,6 @@
 # Workforce & Competence Management — upgrade history and verification
 
-This document records the major interactive upgrades to the prototype. It is not a separate application or a second source of truth for the current feature set; `README.md` is the authoritative current overview.
+This document records major interactive upgrades to the prototype. It is not a separate application or a second source of truth for the current feature set; `README.md` is the authoritative current overview.
 
 ## Current interactive scope
 
@@ -51,6 +51,8 @@ This document records the major interactive upgrades to the prototype. It is not
 - Shift-plan spreadsheet-compatible export
 - JSON backup export
 - HTML shift-plan sharing
+- ICS calendar export
+- Browser Print / Save as PDF
 
 ### Dashboard
 
@@ -60,58 +62,51 @@ This document records the major interactive upgrades to the prototype. It is not
 - Competence expiry/review alerts
 - Shift-level coverage explanations
 
+## Database migrations
+
+The prototype uses a checked-in EF Core migration set instead of `EnsureCreated()`.
+
+Current baseline:
+
+- `backend/Workforce.Api/Migrations/20260822161018_InitialCreate.cs`
+- `backend/Workforce.Api/Migrations/20260822161018_InitialCreate.Designer.cs`
+- `backend/Workforce.Api/Migrations/AppDbContextModelSnapshot.cs`
+
+The API applies pending migrations before seeding. CI validates the migration set and checks for pending model changes.
+
 ## Verification
 
-### Backend
+The current backend test suite contains **18 xUnit tests**, all passing in the final local verification.
 
-```powershell
-dotnet test .\backend\Workforce.Api.Tests\Workforce.Api.Tests.csproj --configuration Release
-```
+The frontend uses lint/build validation rather than a separate automated component/E2E test suite.
 
-The current backend test suite contains 11 unit tests.
+The complete local verification also validates the EF model against the checked-in snapshot, Docker Compose configuration/build/start, SQL Server health, API health and frontend availability.
 
-### Frontend
+## CI smoke verification
 
-```powershell
-cd .\frontend
-npm ci
-npm run lint
-npm run build
-```
-
-The frontend currently uses lint/build validation rather than a separate automated component/E2E test suite.
-
-### Complete development stack
-
-```powershell
-cd ..
-docker compose up --build
-```
-
-The stack exposes the frontend on `http://localhost:8088`, the API on `http://localhost:5080` and OpenAPI on `http://localhost:5080/openapi/v1.json`.
-
-### CI smoke verification
-
-GitHub Actions now validates the complete Docker stack by:
+GitHub Actions validates the complete Docker stack by:
 
 1. building the Compose images;
 2. starting SQL Server, API and frontend;
-3. waiting for the API database health endpoint;
-4. checking the frontend response;
-5. bootstrapping a temporary CI administrator;
-6. logging in and storing the HTTP-only authentication cookie;
+3. waiting for API health;
+4. validating the checked-in EF migration baseline;
+5. checking frontend availability;
+6. authenticating a synthetic CI/demo administrator;
 7. calling protected dashboard and shift endpoints;
-8. printing service logs on failure; and
-9. tearing the stack down with its temporary database volume.
+8. running the workforce CRUD/planning smoke flow;
+9. printing service logs on failure; and
+10. tearing the stack down with its temporary database volume.
+
+The CI data is synthetic and disposable. It must never contain real employee or patient information.
 
 ## Platform maintenance
 
-The backend has been migrated from .NET 9 to supported .NET 10, and the Microsoft ASP.NET Core/EF Core packages are aligned to the current 10.0.11 patch release used for this audit.
+The backend targets .NET 10, with Microsoft ASP.NET Core and EF Core packages aligned to the 10.0.11 patch release used by the current project files.
 
-The CodeQL workflow has been migrated from CodeQL Action v3 to v4. GitHub's current CodeQL documentation lists v4 as the latest supported major version.
+The CodeQL workflow uses the current repository configuration. Dependabot is configured through `.github/dependabot.yml`.
 
 ## Important distinction
 
-The prototype is functionally broader than the original V2 CRUD upgrade. The current implementation combines the original employee/competence/shift management with coverage evaluation, candidate planning, scenario analysis, authentication, audit events and data exchange.
+The current implementation combines employee/competence/shift management with coverage evaluation, candidate planning, scenario analysis, authentication, audit events and data exchange.
 
 For the authoritative current feature list and architecture, see `README.md`.

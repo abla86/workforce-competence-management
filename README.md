@@ -1,301 +1,313 @@
 # Workforce & Competence Management
 
-A full-stack workforce-planning and competence-management prototype for managing **employees, competence, shift plans and staffing coverage** in one system.
+A full-stack workforce-planning and competence-management prototype for **employees, competence, shift planning and staffing coverage**.
 
-The application is designed as explainable decision support: it evaluates whether a planned shift has enough staff with the required roles and valid competence, identifies gaps and suggests qualified replacements. Final staffing decisions remain with an authorized human user.
-
-[![CI](https://github.com/abla86/workforce-competence-management/actions/workflows/ci.yml/badge.svg)](https://github.com/abla86/workforce-competence-management/actions/workflows/ci.yml)
+[![Full Stack CI](https://github.com/abla86/workforce-competence-management/actions/workflows/ci.yml/badge.svg)](https://github.com/abla86/workforce-competence-management/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/abla86/workforce-competence-management/actions/workflows/codeql.yml/badge.svg)](https://github.com/abla86/workforce-competence-management/actions/workflows/codeql.yml)
+[![Dependency Review](https://github.com/abla86/workforce-competence-management/actions/workflows/dependency-review.yml/badge.svg)](https://github.com/abla86/workforce-competence-management/actions/workflows/dependency-review.yml)
 
-## Core prototype areas
+## Portfolio summary
 
-### 1. Shift planning
+This project demonstrates full-stack application engineering around a realistic workforce-management problem: combining employee competence, availability and shift requirements to support safer staffing decisions.
 
-- Create and manage day, evening and night shifts
-- Define shift date, duration, department and minimum staffing
-- Assign and remove employees from shifts
-- Define competence requirements for each shift
-- Define required competence level and required count
-- Define required role and critical requirements
-- Detect duplicate/overlapping assignments
-- Check availability, approved absence and rest-period warnings
-- Calculate planned staffing against minimum staffing
+The application is deliberately presented as **decision support**, not autonomous staffing. It exposes the reasons behind coverage results and keeps organisational, legal and professional responsibility outside the software.
 
-### 2. Competence management
+### What it demonstrates
 
-- Competence catalogue
-- Employee competence records
-- Competence levels: Basic, Intermediate and Advanced
-- Validity/expiry dates
-- Expired and review-due competence indicators
-- Competence requirements linked directly to shifts
-- Automatic qualification checks against required level and validity
+- React 19 + Vite frontend
+- ASP.NET Core / .NET 10 Minimal API
+- Entity Framework Core 10
+- SQL Server 2022
+- Authentication with HTTP-only cookies and JWT validation
+- Role-aware mutation controls
+- Competence catalogue and employee competence records
+- Shift planning and competence requirements
+- Staffing and competence coverage analysis
+- Candidate ranking and what-if scenarios
+- Availability, absence, overlap and rest-period checks
+- Audit events and coverage history
+- CSV/JSON/ICS/report export and controlled import/migration flows
+- Docker and Docker Compose
+- GitHub Actions CI/CD
+- CodeQL, Dependabot and dependency review
+- Automated backend, frontend and full-stack verification
 
-### 3. Staffing and coverage
+## Live demonstration
 
-- Minimum staffing validation
-- Competence coverage calculation
-- Required-role checks
-- Explainable GREEN / YELLOW / RED operational status
-- Human-readable reasons for uncovered requirements
-- Candidate ranking for replacement planning
-- What-if scenario analysis without modifying the real assignment
-- Suggested replacement candidates
-- Coverage evaluation history through the audit-event store
+**Live demo:** https://workforce-frontend.onrender.com
 
-## Decision model
+The deployment is a portfolio demonstration using demo data and automatic demo authentication. **Do not enter real employee, health, confidential or other sensitive information.**
 
-- **GREEN** — staffing and configured competence requirements are covered and no blocking availability issue is detected.
-- **YELLOW** — the shift is not fully covered by all configured requirements, but the gap is non-critical and requires review.
-- **RED** — minimum staffing is not met or a critical competence requirement is missing.
+Useful entry points:
 
-The application displays the underlying reasons instead of relying on colour alone.
+- [User guide](docs/USER-GUIDE.md)
+- [API guide](docs/API.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Security](README-SECURITY.md)
+- [Production readiness](docs/PRODUCTION-READINESS.md)
+- [Test matrix](docs/TEST-MATRIX.md)
+- [Portfolio evidence](docs/PORTFOLIO.md)
 
-## Coverage checks
-
-1. Minimum staffing
-2. Required competence
-3. Minimum competence level
-4. Competence validity at the shift date
-5. Required role
-6. Approved absence
-7. Double booking
-8. Rest-period warning
-9. Candidate ranking for replacement planning
-
-## Scenario analysis
-
-`POST /api/shifts/{id}/coverage/scenario` can temporarily remove one or more employee IDs from a shift simulation. The real database assignments are not changed by the simulation.
-
-The result contains:
-
-- simulated staffing coverage
-- simulated competence coverage
-- warnings and gaps
-- eligible replacement candidates
-
-This is decision support, not automatic scheduling.
-
-## Data exchange
-
-The current backend also provides authenticated data-exchange functions for practical administration:
-
-- Employee CSV export
-- Competence CSV export
-- Shift-plan spreadsheet-compatible export
-- JSON backup export
-- HTML shift-plan sharing view
-- Employee CSV import
-- Competence CSV import
-
-These functions are intended for controlled development/demo use and must be subject to the organization's information-security and privacy requirements if adapted for real employee data.
-
-## API documentation
-
-The ASP.NET Core built-in OpenAPI document is available when the API is running:
-
-- `http://localhost:5080/openapi/v1.json`
-
-This repository does not currently include a separate Swagger UI; the generated OpenAPI document can be opened directly or imported into an API client.
-
-## API areas
-
-### Authentication
-
-- `POST /api/auth/login`
-- `POST /api/auth/logout`
-- `GET /api/auth/me`
-- `POST /api/auth/bootstrap`
+## Core functionality
 
 ### Workforce and competence
 
-- `GET /api/employees`
-- `POST /api/employees`
-- `PUT /api/employees/{id}`
-- `DELETE /api/employees/{id}`
-- `POST /api/employees/{id}/competences`
-- `DELETE /api/employees/{id}/competences/{competenceId}`
-- `GET /api/competences`
-- `POST /api/competences`
-- `DELETE /api/competences/{id}`
+- Employee records with role, department and employment percentage
+- Competence catalogue
+- Basic / Intermediate / Advanced competence levels
+- Validity and expiry tracking
+- Review-due indicators
+- Competence requirements linked to shifts
 
 ### Shift planning
 
-- `GET /api/shifts`
-- `POST /api/shifts`
-- `PUT /api/shifts/{id}`
-- `DELETE /api/shifts/{id}`
-- `POST /api/shifts/{id}/assignments`
-- `DELETE /api/shifts/{id}/assignments/{employeeId}`
-- `POST /api/shifts/{id}/requirements`
-- `DELETE /api/shifts/{id}/requirements/{competenceId}`
+- Day/evening/night shifts
+- Date, start time and duration
+- Minimum staffing
+- Employee assignment/removal
+- Required competence, level, count and role
+- Critical requirements
+- Availability and absence checks
+- Overlap checks
+- Working-time warning baselines
 
-### Coverage and planning support
+### Staffing decision support
 
-- `GET /api/shifts/{id}/coverage`
-- `POST /api/shifts/{id}/coverage/scenario`
-- `GET /api/shifts/{id}/coverage/history`
-- `GET /api/shifts/{id}/candidates`
-- `POST /api/scenarios/absence`
+Coverage is represented as:
 
-### Data exchange
+| Status | Meaning |
+|---|---|
+| **GREEN** | Configured staffing and competence requirements are satisfied |
+| **YELLOW** | Non-critical warnings or gaps require review |
+| **RED** | Minimum staffing or a critical competence requirement is not satisfied |
 
-- `GET /api/export/employees.csv`
-- `GET /api/export/competences.csv`
-- `GET /api/export/shifts.xls`
-- `GET /api/export/backup.json`
-- `GET /api/share/shiftplan`
-- `POST /api/import/employees.csv`
-- `POST /api/import/competences.csv`
+The interface also exposes the underlying reasons rather than relying on colour alone.
 
-### Health
+Candidate ranking supports:
 
-- `GET /health`
+- competence matching
+- required role checks
+- absence checks
+- overlapping-shift checks
+- working-time warnings
+- replacement planning
+- what-if coverage scenarios
 
-## Frontend
+The system is **decision support**. It does not replace professional judgement, legislation, collective agreements, local staffing rules or organisational responsibility.
 
-The React application provides dedicated views for:
+## Working-time safety baseline
 
-- Dashboard — operational staffing and competence overview
-- Employees — employee and competence administration
-- Competence — competence catalogue and coverage
-- Shifts — shift planning, assignments, requirements and live coverage
-- Gap Analysis — identification of staffing and competence gaps
+The prototype centralises its scheduling baseline in `SchedulingRules.cs` and currently uses:
 
-The shift-management view combines staffing, competence requirements, coverage status, candidate ranking and what-if analysis in the same workflow.
+- 11 hours minimum daily rest baseline
+- 35 hours minimum weekly rest baseline
+- 37.5 hours default weekly-hours baseline
+- 24 hours maximum shift-duration guardrail
+
+These values are **software baselines for the prototype**, not a declaration of legal compliance. Applicable legislation, collective agreements, local policies and documented exceptions must always be assessed for the target organisation.
 
 ## Architecture
 
 ```text
-React + Vite frontend
+React 19 + Vite
+        |
+        v
+Shared frontend API client
         |
         v
 ASP.NET Core Minimal API (.NET 10)
         |
-        +-- CoverageService
-        +-- PlanningAdvisor
-        +-- Authentication / RBAC
-        +-- Audit events
-        +-- Data import / export
+        +--> Authentication / Authorization
+        +--> CoverageService
+        +--> PlanningAdvisor
+        +--> SchedulingRules
+        +--> Audit / Data Exchange
         |
         v
 Entity Framework Core 10
         |
         v
-SQL Server
+SQL Server 2022
 ```
 
-The existing `ShiftAssignment` + `ShiftRequirement` model remains the authoritative scheduling model. A separate task-coverage model is deliberately not introduced, avoiding competing sources of truth.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for boundaries, security controls, data flow and operational assumptions.
 
 ## Security
 
-- JWT authentication stored in an HTTP-only cookie
-- Role checks for mutating planning data
-- Login/bootstrap rate limiting
-- Account lockout after repeated failed login attempts
-- CORS configuration
-- Audit events
-- Frontend security response headers
-- CodeQL v4 workflow
-- Dependabot configuration
+Implemented controls include:
 
-The Docker development stack uses plain HTTP and therefore sets `SECURITY_COOKIE_SECURE=false` by default. Production must terminate TLS and set `SECURITY_COOKIE_SECURE=true`; HTTPS/HSTS, secret management, database backup/recovery, identity-management hardening and an appropriate privacy/security assessment are required before real employee data is used.
+- HTTP-only authentication cookie
+- JWT issuer, audience, lifetime and signing-key validation
+- role-aware mutation protection
+- authentication rate limiting
+- account lockout after repeated failed logins
+- fixed-time comparison for bootstrap credentials
+- CORS allow-list configuration
+- audit events
+- security response headers
+- CodeQL
+- Dependabot
+- dependency review
+- non-root API container
+- controlled file-upload size limits
+- server-side import/migration validation
+- explicit production TLS/secure-cookie requirements
+
+The local/demo configuration intentionally allows an insecure localhost cookie setting where required for the HTTP development stack. Production deployment requires TLS, secure cookies, production secret management and an appropriate privacy/security review.
 
 See [README-SECURITY.md](README-SECURITY.md).
 
-## Testing and CI
+## Data exchange
 
-The backend currently contains **11 xUnit tests** covering core coverage rules and planning constraints. The frontend currently has lint/build validation rather than a separate automated component-test suite.
+The frontend/API supports controlled export and migration workflows, including:
 
-GitHub Actions validates:
+- employee CSV
+- competence CSV
+- shift-plan export
+- JSON backup export
+- ICS calendar export
+- standalone HTML shift-plan report
+- browser print / Save as PDF
+- structured JSON/CSV inspection
+- server-side migration validation
 
-- backend restore/build/test on .NET 10
-- frontend `npm ci`/lint/build
-- Docker Compose configuration and image build
-- full-stack Docker startup
-- API database health
-- frontend HTTP response
-- bootstrap/login authentication
-- authenticated dashboard and shift API smoke tests
+These features are **not** a substitute for an organisation's controlled backup, retention, access-control and recovery procedures.
 
-CodeQL runs C# and JavaScript/TypeScript analysis. Dependabot monitors NuGet, npm and GitHub Actions dependencies.
+## Testing and verification
 
-Run backend tests locally:
+The backend test suite currently contains **19 xUnit tests** across coverage, availability and planning behaviour.
 
-```bash
-dotnet test backend/Workforce.Api.Tests/Workforce.Api.Tests.csproj --configuration Release
+The repository also validates:
+
+- EF Core migration/model state
+- backend build and tests
+- frontend lint and production build
+- Docker Compose configuration and build
+- API health
+- frontend health
+- unauthenticated API protection
+- demo authentication
+- employee/competence/shift CRUD flow
+- coverage analysis
+- candidate retrieval
+- audit access
+- coverage scenario evaluation
+
+The authoritative current CI result is the GitHub Actions workflow linked by the badge above. This README intentionally does not claim that a historical run proves the current repository state.
+
+See [docs/TEST-MATRIX.md](docs/TEST-MATRIX.md).
+
+## Local development
+
+### Prerequisites
+
+- .NET 10 SDK
+- Node.js 22+
+- Docker Desktop
+- PowerShell
+
+### Full-stack verification
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\verify-local-stack.ps1"
 ```
 
-Run frontend checks:
+### Backend
 
-```bash
+```powershell
+dotnet restore backend/Workforce.Api.Tests/Workforce.Api.Tests.csproj
+dotnet build backend/Workforce.Api.Tests/Workforce.Api.Tests.csproj -c Release
+dotnet test backend/Workforce.Api.Tests/Workforce.Api.Tests.csproj -c Release
+```
+
+### Frontend
+
+```powershell
 cd frontend
 npm ci
 npm run lint
 npm run build
 ```
 
-## Run with Docker Compose
+### Docker
 
-Create `.env` from `.env.example` and provide local development values for:
-
-- `DB_PASSWORD`
-- `JWT_SECRET_KEY`
-- `VAKTKLAR_BOOTSTRAP_KEY`
-- `SECURITY_COOKIE_SECURE=false` for plain HTTP localhost development
-
-Then:
-
-```bash
+```powershell
+docker compose config --quiet
 docker compose up --build
 ```
 
-Local addresses:
+The local API and frontend ports are documented in the repository's deployment and user guides.
 
-- Frontend: `http://localhost:8088`
-- API: `http://localhost:5080`
-- OpenAPI: `http://localhost:5080/openapi/v1.json`
-- Health: `http://localhost:5080/health`
+## Database migrations
 
-### First-time login
+The API uses **EF Core migrations**, not `EnsureCreated()`.
 
-The initial administrator is created through the one-time bootstrap endpoint using `VAKTKLAR_BOOTSTRAP_KEY`. The bootstrap endpoint refuses to create another account once an account already exists.
+For a deliberate model change:
 
-For local development, call the endpoint with a strong username/password, then sign in through the frontend. Never reuse development bootstrap credentials in another environment.
+```powershell
+dotnet ef migrations add <DescriptiveName> --project backend/Workforce.Api --startup-project backend/Workforce.Api
+```
 
-## Database lifecycle
+Migration/model validation is part of CI. A migration mismatch should be corrected rather than suppressed.
 
-The prototype currently uses `Database.EnsureCreatedAsync()` for its self-contained demo database and does **not** yet ship an EF Core migrations history. This makes the disposable Docker demo easy to start, but it is not sufficient for controlled production schema evolution.
+## Production boundary
 
-A production version should introduce reviewed EF Core migrations, explicit migration deployment, backup/restore testing and a defined data-retention model before persistent organizational data is used.
+This repository is a **portfolio prototype**, not a production healthcare or workforce-management product.
 
-## Known prototype limitations
+Before production use, the target organisation would need to establish, at minimum:
 
-- No production deployment is included in this repository.
-- No frontend automated component/E2E test suite is currently included.
-- No performance/load benchmark has been established.
-- No external identity provider/MFA integration is included.
-- Audit storage is database-backed but does not yet provide tamper-evident or immutable log storage.
-- Demo seed data is fictional and intended for development/testing.
+- appropriate identity and access management
+- TLS and secure secret management
+- privacy and data-protection assessment
+- retention and deletion policy
+- backup and disaster recovery
+- monitoring and incident response
+- formal validation of working-time rules
+- accessibility and usability validation
+- organisation-specific security testing
+- operational ownership and change control
 
-These limitations are intentional prototype boundaries and should not be hidden behind a claim of production readiness.
+See [docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md).
 
-## Data safety
+## Technology
 
-All repository demo data must be fictional. Do not store real employee, patient or other sensitive personal information in the repository.
+| Area | Technology |
+|---|---|
+| Frontend | React 19, Vite 7, JavaScript |
+| Backend | C#, ASP.NET Core / .NET 10 |
+| API | Minimal API, OpenAPI |
+| Database | SQL Server 2022, EF Core 10 |
+| Authentication | JWT validation, HTTP-only cookie |
+| Password hashing | BCrypt.Net-Next |
+| Documents | Open XML |
+| Testing | xUnit, automated smoke verification |
+| Containers | Docker, Docker Compose |
+| CI/CD | GitHub Actions |
+| Security | CodeQL, Dependabot, dependency review |
 
-## Project purpose
+## Repository evidence
 
-The prototype demonstrates full-stack engineering around a realistic workforce-management problem: converting staffing, competence and availability rules into transparent operational decision support.
+The project includes documentation intended to make engineering decisions inspectable:
 
-## Related prototype
-
-The repository is the web-based/full-stack prototype. A separate C#/.NET **Shift & Competence Planner** demonstrates the same domain at a smaller scope. Keeping the two repositories separate makes the progression from a focused planning prototype to the full-stack system visible in the portfolio.
+- architecture documentation
+- user and API guides
+- security documentation
+- production-readiness boundary
+- functional test matrix
+- deployment guide
+- upgrade guide
+- portfolio evidence
+- worklog
+- repository change-control audit
 
 ## Author
 
-Anne Beth Andersen
+**Anne Beth Andersen**
 
-## Portfolio
+Portfolio: https://abla86.github.io/developer-portfolio/
 
-https://abla86.github.io/developer-portfolio/
+## Scope and responsible use
+
+The project uses synthetic/demo data. Do not use real employee, health or other sensitive personal data in the portfolio deployment.
+
+The application provides decision support and transparent explanations. It must not be presented as an automated system for making employment, staffing or clinical decisions without appropriate human oversight and organisational validation.

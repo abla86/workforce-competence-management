@@ -5,10 +5,38 @@ namespace Workforce.Api.Data;
 
 public static class SeedData
 {
+    private const string DemoUsername = "demo";
+
     public static async Task InitializeAsync(AppDbContext db)
     {
-        await db.Database.EnsureCreatedAsync();
-        await EnsureUserAccountSchemaAsync(db);
+        if (string.Equals(Environment.GetEnvironmentVariable("DEMO_MODE"), "true", StringComparison.OrdinalIgnoreCase))
+        {
+            var demoPassword = Environment.GetEnvironmentVariable("DEMO_PASSWORD");
+            if (string.IsNullOrWhiteSpace(demoPassword) || demoPassword.Length < 12)
+                throw new InvalidOperationException("DEMO_PASSWORD must be configured with at least 12 characters when DEMO_MODE=true.");
+
+            var demoUser = await db.UserAccounts.SingleOrDefaultAsync(x => x.Username == DemoUsername);
+            if (demoUser is null)
+            {
+                db.UserAccounts.Add(new UserAccount
+                {
+                    Username = DemoUsername,
+                    PasswordHash = BCrypt.Net.BCrypt.HashPassword(demoPassword, 12),
+                    Role = "Admin",
+                    IsActive = true
+                });
+            }
+            else
+            {
+                demoUser.PasswordHash = BCrypt.Net.BCrypt.HashPassword(demoPassword, 12);
+                demoUser.Role = "Admin";
+                demoUser.IsActive = true;
+                demoUser.FailedLoginAttempts = 0;
+                demoUser.LockedUntilUtc = null;
+            }
+
+            await db.SaveChangesAsync();
+        }
 
         if (await db.Employees.AnyAsync())
             return;
@@ -38,17 +66,17 @@ public static class SeedData
         await db.SaveChangesAsync();
 
         db.EmployeeCompetences.AddRange(
-            new EmployeeCompetence { EmployeeId = employees[0].Id, CompetenceId = competences[0].Id, Level = "Advanced" },
-            new EmployeeCompetence { EmployeeId = employees[0].Id, CompetenceId = competences[1].Id, Level = "Advanced" },
-            new EmployeeCompetence { EmployeeId = employees[0].Id, CompetenceId = competences[5].Id, Level = "Intermediate" },
-            new EmployeeCompetence { EmployeeId = employees[1].Id, CompetenceId = competences[1].Id, Level = "Intermediate" },
-            new EmployeeCompetence { EmployeeId = employees[1].Id, CompetenceId = competences[2].Id, Level = "Advanced" },
-            new EmployeeCompetence { EmployeeId = employees[2].Id, CompetenceId = competences[2].Id, Level = "Intermediate" },
-            new EmployeeCompetence { EmployeeId = employees[3].Id, CompetenceId = competences[0].Id, Level = "Intermediate" },
-            new EmployeeCompetence { EmployeeId = employees[3].Id, CompetenceId = competences[3].Id, Level = "Advanced", ValidUntil = DateOnly.FromDateTime(DateTime.Today.AddDays(30)) },
-            new EmployeeCompetence { EmployeeId = employees[4].Id, CompetenceId = competences[3].Id, Level = "Basic" },
-            new EmployeeCompetence { EmployeeId = employees[5].Id, CompetenceId = competences[4].Id, Level = "Advanced" },
-            new EmployeeCompetence { EmployeeId = employees[5].Id, CompetenceId = competences[5].Id, Level = "Advanced" }
+            new EmployeeCompetence { EmployeeId = employees[0].Id, CompetenceId = competences[0].Id, Level = CompetenceLevel.Advanced },
+            new EmployeeCompetence { EmployeeId = employees[0].Id, CompetenceId = competences[1].Id, Level = CompetenceLevel.Advanced },
+            new EmployeeCompetence { EmployeeId = employees[0].Id, CompetenceId = competences[5].Id, Level = CompetenceLevel.Intermediate },
+            new EmployeeCompetence { EmployeeId = employees[1].Id, CompetenceId = competences[1].Id, Level = CompetenceLevel.Intermediate },
+            new EmployeeCompetence { EmployeeId = employees[1].Id, CompetenceId = competences[2].Id, Level = CompetenceLevel.Advanced },
+            new EmployeeCompetence { EmployeeId = employees[2].Id, CompetenceId = competences[2].Id, Level = CompetenceLevel.Intermediate },
+            new EmployeeCompetence { EmployeeId = employees[3].Id, CompetenceId = competences[0].Id, Level = CompetenceLevel.Intermediate },
+            new EmployeeCompetence { EmployeeId = employees[3].Id, CompetenceId = competences[3].Id, Level = CompetenceLevel.Advanced, ValidUntil = DateOnly.FromDateTime(DateTime.Today.AddDays(30)) },
+            new EmployeeCompetence { EmployeeId = employees[4].Id, CompetenceId = competences[3].Id, Level = CompetenceLevel.Basic },
+            new EmployeeCompetence { EmployeeId = employees[5].Id, CompetenceId = competences[4].Id, Level = CompetenceLevel.Advanced },
+            new EmployeeCompetence { EmployeeId = employees[5].Id, CompetenceId = competences[5].Id, Level = CompetenceLevel.Advanced }
         );
 
         var today = DateOnly.FromDateTime(DateTime.Today);
@@ -76,34 +104,13 @@ public static class SeedData
             new ShiftAssignment { ShiftId = shifts[3].Id, EmployeeId = employees[5].Id }
         );
         db.ShiftRequirements.AddRange(
-            new ShiftRequirement { ShiftId = shifts[0].Id, CompetenceId = competences[1].Id, MinimumCount = 1, MinimumLevel = "Intermediate" },
-            new ShiftRequirement { ShiftId = shifts[0].Id, CompetenceId = competences[4].Id, MinimumCount = 1, MinimumLevel = "Advanced" },
-            new ShiftRequirement { ShiftId = shifts[1].Id, CompetenceId = competences[0].Id, MinimumCount = 1, MinimumLevel = "Intermediate" },
-            new ShiftRequirement { ShiftId = shifts[1].Id, CompetenceId = competences[2].Id, MinimumCount = 1, MinimumLevel = "Intermediate" },
-            new ShiftRequirement { ShiftId = shifts[2].Id, CompetenceId = competences[0].Id, MinimumCount = 1, MinimumLevel = "Intermediate" },
-            new ShiftRequirement { ShiftId = shifts[3].Id, CompetenceId = competences[5].Id, MinimumCount = 1, MinimumLevel = "Intermediate" }
+            new ShiftRequirement { ShiftId = shifts[0].Id, CompetenceId = competences[1].Id, MinimumCount = 1, MinimumLevel = CompetenceLevel.Intermediate },
+            new ShiftRequirement { ShiftId = shifts[0].Id, CompetenceId = competences[4].Id, MinimumCount = 1, MinimumLevel = CompetenceLevel.Advanced },
+            new ShiftRequirement { ShiftId = shifts[1].Id, CompetenceId = competences[0].Id, MinimumCount = 1, MinimumLevel = CompetenceLevel.Intermediate },
+            new ShiftRequirement { ShiftId = shifts[1].Id, CompetenceId = competences[2].Id, MinimumCount = 1, MinimumLevel = CompetenceLevel.Intermediate },
+            new ShiftRequirement { ShiftId = shifts[2].Id, CompetenceId = competences[0].Id, MinimumCount = 1, MinimumLevel = CompetenceLevel.Intermediate },
+            new ShiftRequirement { ShiftId = shifts[3].Id, CompetenceId = competences[5].Id, MinimumCount = 1, MinimumLevel = CompetenceLevel.Intermediate }
         );
         await db.SaveChangesAsync();
-    }
-
-    private static async Task EnsureUserAccountSchemaAsync(AppDbContext db)
-    {
-        await db.Database.ExecuteSqlRawAsync(@"
-IF OBJECT_ID(N'dbo.UserAccounts', N'U') IS NULL
-BEGIN
-    CREATE TABLE dbo.UserAccounts (
-        Id int IDENTITY(1,1) NOT NULL CONSTRAINT PK_UserAccounts PRIMARY KEY,
-        Username nvarchar(100) NOT NULL,
-        PasswordHash nvarchar(max) NOT NULL,
-        Role nvarchar(40) NOT NULL,
-        IsActive bit NOT NULL CONSTRAINT DF_UserAccounts_IsActive DEFAULT(1),
-        FailedLoginAttempts int NOT NULL CONSTRAINT DF_UserAccounts_FailedLoginAttempts DEFAULT(0),
-        LockedUntilUtc datetime2 NULL,
-        CreatedAtUtc datetime2 NOT NULL CONSTRAINT DF_UserAccounts_CreatedAtUtc DEFAULT(SYSUTCDATETIME()),
-        LastLoginAtUtc datetime2 NULL,
-        EmployeeId nvarchar(100) NULL
-    );
-    CREATE UNIQUE INDEX IX_UserAccounts_Username ON dbo.UserAccounts(Username);
-END");
     }
 }

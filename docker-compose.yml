@@ -20,12 +20,14 @@ services:
       context: ./backend/Workforce.Api
     environment:
       ASPNETCORE_URLS: "http://+:8080"
-      ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=WorkforceCompetenceDb;User Id=sa;Password=$${DB_PASSWORD};TrustServerCertificate=True"
+      DEMO_MODE: "true"
+      DEMO_PASSWORD: "${DEMO_PASSWORD:?Set DEMO_PASSWORD in .env}"
+      ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=WorkforceCompetenceDb;User Id=sa;Password=${DB_PASSWORD};TrustServerCertificate=True;Encrypt=False"
       Jwt__SecretKey: "${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in .env}"
       Jwt__Issuer: "vaktklar"
       Jwt__Audience: "vaktklar-web"
       VAKTKLAR_BOOTSTRAP_KEY: "${VAKTKLAR_BOOTSTRAP_KEY:?Set VAKTKLAR_BOOTSTRAP_KEY in .env}"
-      Security__CookieSecure: "${SECURITY_COOKIE_SECURE:-false}"
+      Security__CookieSecure: "false"
       Cors__Origins__0: "http://localhost:8088"
       Cors__Origins__1: "http://localhost:5173"
     ports:
@@ -43,6 +45,10 @@ services:
   frontend:
     build:
       context: ./frontend
+    environment:
+      VITE_DEMO_AUTO_LOGIN: "true"
+      VITE_DEMO_USERNAME: "demo"
+      VITE_DEMO_PASSWORD: "${DEMO_PASSWORD:?Set DEMO_PASSWORD in .env}"
     ports:
       - "8088:80"
     depends_on:
