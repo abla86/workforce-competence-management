@@ -18,7 +18,11 @@ jobs:
     if: github.event.repository.private == false
     runs-on: ubuntu-latest
     steps:
+dependabot/github_actions/actions/checkout-7
+      - uses: actions/checkout@v7
+
       - uses: actions/checkout@v5
+main
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
