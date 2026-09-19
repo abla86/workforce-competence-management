@@ -1,0 +1,7 @@
+bin/
+obj/
+.vs/
+*.user
+*.suo
+ShiftPlanner/planner-data.json
+shift-plan.csv
