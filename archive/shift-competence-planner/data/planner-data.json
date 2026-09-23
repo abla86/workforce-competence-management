@@ -1,0 +1,89 @@
+{
+  "Employees": [
+    {
+      "Id": 1,
+      "Name": "Anne",
+      "Role": "Sykepleier",
+      "PositionPercent": 100,
+      "Competencies": [
+        "Sykepleier",
+        "Legemiddelhåndtering",
+        "Palliasjon"
+      ]
+    },
+    {
+      "Id": 2,
+      "Name": "Kari",
+      "Role": "Helsefagarbeider",
+      "PositionPercent": 80,
+      "Competencies": [
+        "Helsefagarbeider",
+        "Legemiddelhåndtering"
+      ]
+    },
+    {
+      "Id": 3,
+      "Name": "Per",
+      "Role": "Helsefagarbeider",
+      "PositionPercent": 100,
+      "Competencies": [
+        "Helsefagarbeider"
+      ]
+    },
+    {
+      "Id": 4,
+      "Name": "Liv",
+      "Role": "Sykepleier",
+      "PositionPercent": 60,
+      "Competencies": [
+        "Sykepleier",
+        "Legemiddelhåndtering"
+      ]
+    }
+  ],
+  "Shifts": [
+    {
+      "Id": 1,
+      "Date": "2026-08-14",
+      "ShiftType": "Dag",
+      "Hours": 7.5,
+      "MinimumStaff": 3,
+      "RequiredCompetencies": [
+        "Sykepleier",
+        "Legemiddelhåndtering"
+      ],
+      "EmployeeIds": [
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "Id": 2,
+      "Date": "2026-08-14",
+      "ShiftType": "Kveld",
+      "Hours": 7.0,
+      "MinimumStaff": 3,
+      "RequiredCompetencies": [
+        "Sykepleier"
+      ],
+      "EmployeeIds": [
+        2,
+        3
+      ]
+    },
+    {
+      "Id": 3,
+      "Date": "2026-08-14",
+      "ShiftType": "Natt",
+      "Hours": 10.0,
+      "MinimumStaff": 2,
+      "RequiredCompetencies": [
+        "Sykepleier"
+      ],
+      "EmployeeIds": [
+        4
+      ]
+    }
+  ]
+}
