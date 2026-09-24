@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 const key = (v) => String(v ?? "").trim().toLowerCase();
-const num = (v, fallback = 0) => { const n = Number(String(v ?? "").replace(",", ".").replace("%", "")); return Number.isFinite(n) ? n : fallback; };
+const num = (v, fallback = 0) => { const n = Number(String(v ?? "").replace(",", ".").replace(/%/g, "")); return Number.isFinite(n) ? n : fallback; };
 const isoDate = (v) => { const s = String(v ?? "").slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null; };
 const clock = (v) => { const s = String(v ?? "").slice(0, 5); return /^\d{2}:\d{2}$/.test(s) ? s : null; };
 
