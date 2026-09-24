@@ -16,10 +16,13 @@ permissions:
 jobs:
   analyze:
     if: github.event.repository.private == false
+    timeout-minutes: 30
     runs-on: ubuntu-latest
     steps:
 
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v4
