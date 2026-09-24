@@ -6,9 +6,9 @@ function Fail([string]$Message){ Write-Host "FAILED: $Message" -ForegroundColor 
 $root=(Resolve-Path (Join-Path $PSScriptRoot '..')).Path; Set-Location $root
 
 # Local demo credentials. These are only for the runnable prototype environment.
-$defaultDbPassword='WorkforceLocalDb_2026_StrongPassword_ChangeMe!'
-$defaultJwtSecret='WorkforceLocalJwtSecret_2026_ChangeMe_AtLeast32Bytes_9X7K4M2P8Q6R5T3Y1'
-$defaultBootstrap='WorkforceBootstrap_2026_ChangeMe_OneTimeKey_9X7K4M2P8Q6R5T3Y1'
+$defaultDbPassword=[Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+$defaultJwtSecret=[Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+$defaultBootstrap=[Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
 
 if(-not(Test-Path '.env')){
 @"
@@ -82,9 +82,9 @@ if(Test-Path $coverage){
 $compose='docker-compose.yml'
 if(Test-Path $compose){
     $c=Get-Content $compose -Raw
-    $c=$c.Replace('${DB_PASSWORD:?Set DB_PASSWORD in .env}','${DB_PASSWORD:-WorkforceLocalDb_2026_StrongPassword_ChangeMe!}')
-    $c=$c.Replace('${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in .env}','${JWT_SECRET_KEY:-WorkforceLocalJwtSecret_2026_ChangeMe_AtLeast32Bytes_9X7K4M2P8Q6R5T3Y1}')
-    $c=$c.Replace('${VAKTKLAR_BOOTSTRAP_KEY:?Set VAKTKLAR_BOOTSTRAP_KEY in .env}','${VAKTKLAR_BOOTSTRAP_KEY:-WorkforceBootstrap_2026_ChangeMe_OneTimeKey_9X7K4M2P8Q6R5T3Y1}')
+    $c=$c.Replace('${DB_PASSWORD:?Set DB_PASSWORD in .env}','${DB_PASSWORD:?Set DB_PASSWORD in .env}')
+    $c=$c.Replace('${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in .env}','${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in .env}')
+    $c=$c.Replace('${VAKTKLAR_BOOTSTRAP_KEY:?Set VAKTKLAR_BOOTSTRAP_KEY in .env}','${VAKTKLAR_BOOTSTRAP_KEY:?Set VAKTKLAR_BOOTSTRAP_KEY in .env}')
     Set-Content $compose $c -Encoding UTF8
 }
 
