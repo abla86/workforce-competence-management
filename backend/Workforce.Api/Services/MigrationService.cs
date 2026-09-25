@@ -14,7 +14,10 @@ public sealed class MigrationService
 
     public async Task<MigrationImportResult> ImportAsync(MigrationImportRequest request, string actor, CancellationToken cancellationToken = default)
     {
-        if (request.Employees.Count > 5000 || request.Competences.Count > 5000 || request.Shifts.Count > 10000) throw new ArgumentException("Import exceeds the supported limits.");
+        if (request.Employees is null || request.Competences is null || request.Shifts is null)
+            throw new ArgumentException("Import payload is incomplete.");
+        if (request.Employees.Count > 5000 || request.Competences.Count > 5000 || request.Shifts.Count > 10000)
+            throw new ArgumentException("Import exceeds the supported limits.");
         var mode = Enum.TryParse<MigrationConflictMode>(request.Mode, true, out var parsedMode) ? parsedMode : MigrationConflictMode.Skip;
         var created = 0; var updated = 0; var skipped = 0; var conflicts = new List<MigrationConflict>();
         await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
