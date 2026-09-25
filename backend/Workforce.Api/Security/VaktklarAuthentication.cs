@@ -84,12 +84,31 @@ public static class VaktklarAuthentication
         {
             var bootstrapKey = config["VAKTKLAR_BOOTSTRAP_KEY"];
             if (string.IsNullOrWhiteSpace(bootstrapKey)) return Results.StatusCode(503);
-            var expected = Encoding.UTF8.GetBytes(bootstrapKey); var supplied = Encoding.UTF8.GetBytes(request.BootstrapKey);
-            if (expected.Length != supplied.Length || !CryptographicOperations.FixedTimeEquals(expected, supplied)) return Results.Unauthorized();
+            if (string.IsNullOrWhiteSpace(request.BootstrapKey) || !CryptographicOperations.FixedTimeEquals(
+                    Encoding.UTF8.GetBytes(bootstrapKey),
+                    Encoding.UTF8.GetBytes(request.BootstrapKey)))
+                return Results.Unauthorized();
+
             if (await db.UserAccounts.AnyAsync()) return Results.Conflict(new { message = "Initial setup is already completed." });
-            if (request.Username.Length < 3 || request.Password.Length < 12) return Results.BadRequest(new { message = "Username must contain at least 3 characters and password at least 12 characters." });
-            var user = new UserAccount { Username = request.Username.Trim().ToLowerInvariant(), PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password, 12), Role = "Admin" };
-            db.UserAccounts.Add(user); await db.SaveChangesAsync(); return Results.Created("/api/auth/me", new { user.Id, user.Username, user.Role });
+
+            var username = request.Username.Trim().ToLowerInvariant();
+            if (username.Length < 3 || request.Password.Length < 12)
+                return Results.BadRequest(new { message = "Username must contain at least 3 characters and password at least 12 characters." });
+
+            if (await db.UserAccounts.AnyAsync(x => x.Username == username))
+                return Results.Conflict(new { message = "Username already exists." });
+
+            var user = new UserAccount
+            {
+                Username = username,
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password, 12),
+                Role = "Admin"
+            };
+
+            db.UserAccounts.Add(user);
+            await db.SaveChangesAsync();
+
+            return Results.Created("/api/auth/me", new { user.Id, user.Username, user.Role });
         }).RequireRateLimiting("auth");
         return group;
     }
@@ -179,7 +198,13 @@ internal sealed class RoleGuardStartupFilter : IStartupFilter
                 await context.Response.WriteAsJsonAsync(new { format, fileName = file.FileName, preview });
                 return true;
             }
-            catch (Exception ex) { await WriteBadRequestAsync(context, new { message = $"Kunne ikke lese filen: {ex.Message}" }); return true; }
+            catch (Exception ex)
+            {
+                var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("MigrationFileInspection");
+                logger.LogError(ex, "Migration file inspection failed.");
+                await WriteBadRequestAsync(context, new { message = "Kunne ikke lese filen." });
+                return true;
+            }
         }
 
         if (path.Equals("/api/migration/import", StringComparison.OrdinalIgnoreCase) && HttpMethods.IsPost(context.Request.Method))
@@ -194,7 +219,14 @@ internal sealed class RoleGuardStartupFilter : IStartupFilter
                 return true;
             }
             catch (ArgumentException ex) { await WriteBadRequestAsync(context, new { message = ex.Message }); return true; }
-            catch (Exception ex) { context.Response.StatusCode = StatusCodes.Status500InternalServerError; await context.Response.WriteAsJsonAsync(new { message = "Migration failed and the database transaction was rolled back.", detail = ex.Message }); return true; }
+            catch (Exception ex)
+            {
+                var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("MigrationImport");
+                logger.LogError(ex, "Migration import failed.");
+                context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+                await context.Response.WriteAsJsonAsync(new { message = "Migration failed and the database transaction was rolled back." });
+                return true;
+            }
         }
 
         var db = context.RequestServices.GetRequiredService<AppDbContext>();

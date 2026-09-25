@@ -64,7 +64,22 @@ async function request(path, options = {}) {
 
 async function download(path) {
   const response = await fetchWithRecovery(`${API}${path}`, { credentials: "include" });
-  if (!response.ok) throw new Error(`Download failed: ${response.status}`);
+  if (!response.ok) {
+    let message = `Download failed: ${response.status}`;
+    let body = null;
+    try {
+      body = await response.json();
+      message = body.message || message;
+    } catch {
+      // Preserve the status-based error for non-JSON responses.
+    }
+    const error = new Error(message);
+    error.status = response.status;
+    error.body = body;
+    error.requestId = response.headers.get("x-request-id") || null;
+    error.retriable = RETRYABLE_STATUS.has(response.status) && SAFE_METHODS.has("GET");
+    throw error;
+  }
   const blob = await response.blob();
   const disposition = response.headers.get("content-disposition") || "";
   const match = disposition.match(/filename="?([^";]+)"?/i);
