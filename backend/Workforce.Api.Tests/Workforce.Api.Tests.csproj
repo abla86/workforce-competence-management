@@ -17,6 +17,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\\Workforce.Api\\Workforce.Api.csproj" />
+    <ProjectReference Include="..\Workforce.Api\Workforce.Api.csproj" />
   </ItemGroup>
 </Project>
