@@ -163,7 +163,9 @@ app.MapGet("/api/shifts/{id:int}/coverage", async (int id, AppDbContext db, Cove
 
 app.MapPost("/api/shifts/{id:int}/coverage/scenario", async (int id, CoverageScenarioRequest request, AppDbContext db, CoverageService coverage, HttpContext http) =>
 {
-    if (request.RemoveEmployeeIds.Count == 0) return Results.BadRequest(new { message = "At least one employee ID must be supplied." });
+    if (id <= 0) return Results.BadRequest(new { message = "Shift ID must be greater than zero." });
+    if (request.RemoveEmployeeIds is null || request.RemoveEmployeeIds.Count == 0) return Results.BadRequest(new { message = "At least one employee ID must be supplied." });
+    if (request.RemoveEmployeeIds.Any(x => x <= 0) || request.RemoveEmployeeIds.Distinct().Count() > 100) return Results.BadRequest(new { message = "Employee IDs are invalid or exceed the supported limit." });
     try { return Results.Ok(await coverage.EvaluateScenarioAsync(db, id, request.RemoveEmployeeIds.Distinct().ToArray(), http.User.Identity?.Name ?? "system")); }
     catch (ArgumentException ex) { return Results.NotFound(new { message = ex.Message }); }
 });
