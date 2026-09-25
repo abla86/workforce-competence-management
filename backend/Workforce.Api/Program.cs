@@ -91,6 +91,7 @@ app.MapGet("/api/employees", async (AppDbContext db, string? search, string? rol
 app.MapPost("/api/employees", async (CreateEmployeeRequest request, AppDbContext db) =>
 {
     if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.Role)) return Results.BadRequest(new { message = "Name and role are required." });
+    if (request.Name.Trim().Length > 255 || request.Role.Trim().Length > 100) return Results.BadRequest(new { message = "Name or role is too long." });
     if (request.PositionPercent <= 0 || request.PositionPercent > 100) return Results.BadRequest(new { message = "Position percent must be between 1 and 100." });
     if (request.MaxWeeklyHours is <= 0 or > 80) return Results.BadRequest(new { message = "Max weekly hours must be between 1 and 80." });
     var derivedHours = 37.5m * request.PositionPercent / 100m;
@@ -105,6 +106,7 @@ app.MapPost("/api/employees", async (CreateEmployeeRequest request, AppDbContext
 });
 app.MapPut("/api/employees/{id:int}", async (int id, UpdateEmployeeRequest request, AppDbContext db) =>
 {
+    if (id <= 0) return Results.BadRequest(new { message = "Employee ID must be greater than zero." });
     var employee = await db.Employees.FindAsync(id); if (employee is null) return Results.NotFound();
     if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.Role)) return Results.BadRequest(new { message = "Name and role are required." });
     if (request.PositionPercent <= 0 || request.PositionPercent > 100) return Results.BadRequest(new { message = "Position percent must be between 1 and 100." });
@@ -136,7 +138,8 @@ app.MapDelete("/api/employees/{id:int}/competences/{competenceId:int}", async (i
 app.MapGet("/api/competences", async (AppDbContext db) => Results.Ok(await db.Competences.OrderBy(x => x.Category).ThenBy(x => x.Name).ToListAsync()));
 app.MapPost("/api/competences", async (CreateCompetenceRequest request, AppDbContext db) =>
 {
-    if (string.IsNullOrWhiteSpace(request.Name)) return Results.BadRequest(new { message = "Competence name is required." });
+    if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Trim().Length > 255) return Results.BadRequest(new { message = "Competence name is required and must be <= 255 characters." });
+    if (request.Category?.Trim().Length > 100) return Results.BadRequest(new { message = "Competence category is too long." });
     if (await db.Competences.AnyAsync(x => x.Name == request.Name.Trim())) return Results.Conflict(new { message = "Competence already exists." });
     var item = new Competence { Name = request.Name.Trim(), Category = request.Category.Trim() }; db.Competences.Add(item); await db.SaveChangesAsync(); return Results.Created($"/api/competences/{item.Id}", item);
 });
@@ -163,7 +166,9 @@ app.MapGet("/api/shifts/{id:int}/coverage", async (int id, AppDbContext db, Cove
 
 app.MapPost("/api/shifts/{id:int}/coverage/scenario", async (int id, CoverageScenarioRequest request, AppDbContext db, CoverageService coverage, HttpContext http) =>
 {
-    if (request.RemoveEmployeeIds.Count == 0) return Results.BadRequest(new { message = "At least one employee ID must be supplied." });
+    if (id <= 0) return Results.BadRequest(new { message = "Shift ID must be greater than zero." });
+    if (request.RemoveEmployeeIds is null || request.RemoveEmployeeIds.Count == 0) return Results.BadRequest(new { message = "At least one employee ID must be supplied." });
+    if (request.RemoveEmployeeIds.Any(x => x <= 0) || request.RemoveEmployeeIds.Distinct().Count() > 100) return Results.BadRequest(new { message = "Employee IDs are invalid or exceed the supported limit." });
     try { return Results.Ok(await coverage.EvaluateScenarioAsync(db, id, request.RemoveEmployeeIds.Distinct().ToArray(), http.User.Identity?.Name ?? "system")); }
     catch (ArgumentException ex) { return Results.NotFound(new { message = ex.Message }); }
 });
@@ -178,12 +183,15 @@ app.MapGet("/api/shifts/{id:int}/coverage/history", async (int id, AppDbContext 
 
 app.MapPost("/api/shifts", async (CreateShiftRequest request, AppDbContext db) =>
 {
-    if (request.MinimumStaff <= 0 || request.Hours <= 0 || request.Hours > 24) return Results.BadRequest(new { message = "Invalid shift values." });
+    if (string.IsNullOrWhiteSpace(request.ShiftType) || request.ShiftType.Trim().Length > 100) return Results.BadRequest(new { message = "Shift type is required and must be <= 100 characters." });
+    if (request.MinimumStaff <= 0 || request.MinimumStaff > 100 || request.Hours <= 0 || request.Hours > 24) return Results.BadRequest(new { message = "Invalid shift values." });
     var shift = new Shift { Date = request.Date, ShiftType = request.ShiftType.Trim(), Department = request.Department?.Trim() ?? "", StartTime = request.StartTime, Hours = request.Hours, MinimumStaff = request.MinimumStaff, IsCritical = request.IsCritical };
     db.Shifts.Add(shift); await db.SaveChangesAsync(); await Audit(db, "shift.created", "Shift", shift.Id.ToString()); return Results.Created($"/api/shifts/{shift.Id}", shift);
 });
 app.MapPut("/api/shifts/{id:int}", async (int id, UpdateShiftRequest request, AppDbContext db) =>
 {
+    if (id <= 0) return Results.BadRequest(new { message = "Shift ID must be greater than zero." });
+    if (string.IsNullOrWhiteSpace(request.ShiftType) || request.ShiftType.Trim().Length > 100) return Results.BadRequest(new { message = "Shift type is required and must be <= 100 characters." });
     var shift = await db.Shifts.FindAsync(id); if (shift is null) return Results.NotFound();
     if (request.MinimumStaff <= 0 || request.Hours <= 0 || request.Hours > 24) return Results.BadRequest(new { message = "Invalid shift values." });
     shift.Date = request.Date; shift.ShiftType = request.ShiftType.Trim(); shift.Department = request.Department?.Trim() ?? ""; shift.StartTime = request.StartTime; shift.Hours = request.Hours; shift.MinimumStaff = request.MinimumStaff; shift.IsCritical = request.IsCritical; shift.IsPublished = request.IsPublished;
@@ -243,6 +251,8 @@ app.MapGet("/api/shifts/{id:int}/candidates", async (int id, AppDbContext db, Pl
 
 app.MapPost("/api/scenarios/absence", async (ScenarioAbsenceRequest request, AppDbContext db, PlanningAdvisor advisor, CoverageService coverage) =>
 {
+    if (request.EmployeeId <= 0) return Results.BadRequest(new { message = "Employee ID must be greater than zero." });
+
     var affected = await db.Shifts.Include(x => x.Assignments).ThenInclude(x => x.Employee).ThenInclude(x => x.Competences).Include(x => x.Requirements).ThenInclude(x => x.Competence).Where(x => x.Date == request.Date && x.Assignments.Any(a => a.EmployeeId == request.EmployeeId)).ToListAsync();
     var allShifts = await db.Shifts.Include(x => x.Assignments).ToListAsync();
     var employees = await db.Employees.Include(x => x.Competences).ThenInclude(x => x.Competence).Include(x => x.Absences).Where(x => x.IsActive && x.Id != request.EmployeeId).ToListAsync();
@@ -258,6 +268,7 @@ app.MapPost("/api/scenarios/absence", async (ScenarioAbsenceRequest request, App
 
 app.MapPost("/api/absences", async (CreateAbsenceRequest request, AppDbContext db) =>
 {
+    if (request.EmployeeId <= 0) return Results.BadRequest(new { message = "Employee ID must be greater than zero." });
     if (request.To < request.From) return Results.BadRequest(new { message = "To-date cannot be before from-date." });
     if (!await db.Employees.AnyAsync(x => x.Id == request.EmployeeId)) return Results.NotFound();
     var absence = new Absence { EmployeeId = request.EmployeeId, From = request.From, To = request.To, Type = request.Type, Note = request.Note, Approved = request.Approved };
