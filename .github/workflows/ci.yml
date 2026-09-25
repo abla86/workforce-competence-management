@@ -17,13 +17,18 @@ jobs:
   backend:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    env:
-      ConnectionStrings__DefaultConnection: "Server=localhost,1433;Database=WorkforceCompetenceDb;User Id=sa;Password=CiAa1!ModelCheck;TrustServerCertificate=True;Encrypt=False"
     steps:
 
       - uses: actions/checkout@v5
         with:
           persist-credentials: false
+      - name: Generate ephemeral EF credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          DB_PASSWORD="Aa1!$(openssl rand -hex 28)"
+          echo "DB_PASSWORD=$DB_PASSWORD" >> "$GITHUB_ENV"
+          echo "::add-mask::$DB_PASSWORD"
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "10.0.x"
