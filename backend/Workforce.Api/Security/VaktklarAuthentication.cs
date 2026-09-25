@@ -84,7 +84,10 @@ public static class VaktklarAuthentication
         {
             var bootstrapKey = config["VAKTKLAR_BOOTSTRAP_KEY"];
             if (string.IsNullOrWhiteSpace(bootstrapKey)) return Results.StatusCode(503);
-            if (string.IsNullOrWhiteSpace(request.BootstrapKey) || !CryptographicOperations.FixedTimeEquals(
+            if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password) ||
+                string.IsNullOrWhiteSpace(request.BootstrapKey) ||
+                Encoding.UTF8.GetByteCount(request.BootstrapKey) > 256 ||
+                !CryptographicOperations.FixedTimeEquals(
                     Encoding.UTF8.GetBytes(bootstrapKey),
                     Encoding.UTF8.GetBytes(request.BootstrapKey)))
                 return Results.Unauthorized();
