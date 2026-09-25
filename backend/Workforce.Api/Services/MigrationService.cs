@@ -128,8 +128,34 @@ public sealed class MigrationService
 
     public static IReadOnlyList<IReadOnlyList<string>> ReadExcel(Stream stream, CancellationToken cancellationToken = default)
     {
-        using var document = SpreadsheetDocument.Open(stream, false); var workbook = document.WorkbookPart ?? throw new InvalidDataException("Excel workbook has no workbook part."); var sharedStrings = workbook.SharedStringTablePart?.SharedStringTable; var result = new List<IReadOnlyList<string>>();
-        foreach (var sheet in workbook.Workbook.Sheets!.Elements<Sheet>()) { cancellationToken.ThrowIfCancellationRequested(); var part = (WorksheetPart)workbook.GetPartById(sheet.Id!); var rows = part.Worksheet.GetFirstChild<SheetData>()?.Elements<Row>() ?? []; foreach (var row in rows) result.Add(new[] { $"__SHEET__:{sheet.Name}" }.Concat(row.Elements<Cell>().Select(cell => GetCellValue(cell, sharedStrings))).ToList()); }
+        using var document = SpreadsheetDocument.Open(stream, false);
+        var workbook = document.WorkbookPart
+            ?? throw new InvalidDataException("Excel workbook has no workbook part.");
+        var sheets = workbook.Workbook.Sheets
+            ?? throw new InvalidDataException("Excel workbook has no sheets.");
+        var sharedStrings = workbook.SharedStringTablePart?.SharedStringTable;
+        var result = new List<IReadOnlyList<string>>();
+
+        foreach (var sheet in sheets.Elements<Sheet>())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var relationshipId = sheet.Id?.Value
+                ?? throw new InvalidDataException("Excel sheet has no relationship id.");
+            var part = workbook.GetPartById(relationshipId) as WorksheetPart
+                ?? throw new InvalidDataException($"Excel sheet '{sheet.Name}' has no worksheet part.");
+            var rows = part.Worksheet?.GetFirstChild<SheetData>()?.Elements<Row>()
+                ?? [];
+
+            foreach (var row in rows)
+            {
+                result.Add(
+                    new[] { $"__SHEET__:{sheet.Name}" }
+                        .Concat(row.Elements<Cell>().Select(cell => GetCellValue(cell, sharedStrings)))
+                        .ToList());
+            }
+        }
+
         return result;
     }
 
