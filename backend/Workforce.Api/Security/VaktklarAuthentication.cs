@@ -198,7 +198,13 @@ internal sealed class RoleGuardStartupFilter : IStartupFilter
                 await context.Response.WriteAsJsonAsync(new { format, fileName = file.FileName, preview });
                 return true;
             }
-            catch (Exception ex) { await WriteBadRequestAsync(context, new { message = $"Kunne ikke lese filen: {ex.Message}" }); return true; }
+            catch (Exception ex)
+            {
+                var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("MigrationFileInspection");
+                logger.LogError(ex, "Migration file inspection failed.");
+                await WriteBadRequestAsync(context, new { message = "Kunne ikke lese filen." });
+                return true;
+            }
         }
 
         if (path.Equals("/api/migration/import", StringComparison.OrdinalIgnoreCase) && HttpMethods.IsPost(context.Request.Method))
@@ -213,7 +219,14 @@ internal sealed class RoleGuardStartupFilter : IStartupFilter
                 return true;
             }
             catch (ArgumentException ex) { await WriteBadRequestAsync(context, new { message = ex.Message }); return true; }
-            catch (Exception ex) { context.Response.StatusCode = StatusCodes.Status500InternalServerError; await context.Response.WriteAsJsonAsync(new { message = "Migration failed and the database transaction was rolled back.", detail = ex.Message }); return true; }
+            catch (Exception ex)
+            {
+                var logger = context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("MigrationImport");
+                logger.LogError(ex, "Migration import failed.");
+                context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+                await context.Response.WriteAsJsonAsync(new { message = "Migration failed and the database transaction was rolled back." });
+                return true;
+            }
         }
 
         var db = context.RequestServices.GetRequiredService<AppDbContext>();
