@@ -243,6 +243,8 @@ app.MapGet("/api/shifts/{id:int}/candidates", async (int id, AppDbContext db, Pl
 
 app.MapPost("/api/scenarios/absence", async (ScenarioAbsenceRequest request, AppDbContext db, PlanningAdvisor advisor, CoverageService coverage) =>
 {
+    if (request.EmployeeId <= 0) return Results.BadRequest(new { message = "Employee ID must be greater than zero." });
+
     var affected = await db.Shifts.Include(x => x.Assignments).ThenInclude(x => x.Employee).ThenInclude(x => x.Competences).Include(x => x.Requirements).ThenInclude(x => x.Competence).Where(x => x.Date == request.Date && x.Assignments.Any(a => a.EmployeeId == request.EmployeeId)).ToListAsync();
     var allShifts = await db.Shifts.Include(x => x.Assignments).ToListAsync();
     var employees = await db.Employees.Include(x => x.Competences).ThenInclude(x => x.Competence).Include(x => x.Absences).Where(x => x.IsActive && x.Id != request.EmployeeId).ToListAsync();
@@ -258,6 +260,7 @@ app.MapPost("/api/scenarios/absence", async (ScenarioAbsenceRequest request, App
 
 app.MapPost("/api/absences", async (CreateAbsenceRequest request, AppDbContext db) =>
 {
+    if (request.EmployeeId <= 0) return Results.BadRequest(new { message = "Employee ID must be greater than zero." });
     if (request.To < request.From) return Results.BadRequest(new { message = "To-date cannot be before from-date." });
     if (!await db.Employees.AnyAsync(x => x.Id == request.EmployeeId)) return Results.NotFound();
     var absence = new Absence { EmployeeId = request.EmployeeId, From = request.From, To = request.To, Type = request.Type, Note = request.Note, Approved = request.Approved };
