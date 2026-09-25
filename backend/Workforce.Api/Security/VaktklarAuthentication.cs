@@ -84,12 +84,31 @@ public static class VaktklarAuthentication
         {
             var bootstrapKey = config["VAKTKLAR_BOOTSTRAP_KEY"];
             if (string.IsNullOrWhiteSpace(bootstrapKey)) return Results.StatusCode(503);
-            var expected = Encoding.UTF8.GetBytes(bootstrapKey); var supplied = Encoding.UTF8.GetBytes(request.BootstrapKey);
-            if (expected.Length != supplied.Length || !CryptographicOperations.FixedTimeEquals(expected, supplied)) return Results.Unauthorized();
+            if (string.IsNullOrWhiteSpace(request.BootstrapKey) || !CryptographicOperations.FixedTimeEquals(
+                    Encoding.UTF8.GetBytes(bootstrapKey),
+                    Encoding.UTF8.GetBytes(request.BootstrapKey)))
+                return Results.Unauthorized();
+
             if (await db.UserAccounts.AnyAsync()) return Results.Conflict(new { message = "Initial setup is already completed." });
-            if (request.Username.Length < 3 || request.Password.Length < 12) return Results.BadRequest(new { message = "Username must contain at least 3 characters and password at least 12 characters." });
-            var user = new UserAccount { Username = request.Username.Trim().ToLowerInvariant(), PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password, 12), Role = "Admin" };
-            db.UserAccounts.Add(user); await db.SaveChangesAsync(); return Results.Created("/api/auth/me", new { user.Id, user.Username, user.Role });
+
+            var username = request.Username.Trim().ToLowerInvariant();
+            if (username.Length < 3 || request.Password.Length < 12)
+                return Results.BadRequest(new { message = "Username must contain at least 3 characters and password at least 12 characters." });
+
+            if (await db.UserAccounts.AnyAsync(x => x.Username == username))
+                return Results.Conflict(new { message = "Username already exists." });
+
+            var user = new UserAccount
+            {
+                Username = username,
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(request.Password, 12),
+                Role = "Admin"
+            };
+
+            db.UserAccounts.Add(user);
+            await db.SaveChangesAsync();
+
+            return Results.Created("/api/auth/me", new { user.Id, user.Username, user.Role });
         }).RequireRateLimiting("auth");
         return group;
     }
