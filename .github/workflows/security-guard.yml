@@ -13,15 +13,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: {node-version: 22}
-      - name: Install and verify npm projects
+        with:
+          node-version: 22
+      - name: Verify all npm projects
         shell: bash
         run: |
           set -e
+          found=0
           while IFS= read -r p; do
+            found=1
             d="$(dirname "$p")"
             npm install --ignore-scripts --no-audit --prefix "$d"
             npm audit --audit-level=high --prefix "$d"
             npm test --if-present --prefix "$d"
             npm run build --if-present --prefix "$d"
           done < <(find . -name package.json -not -path '*/node_modules/*' -not -path './.git/*' -print)
+          [ "$found" -eq 0 ] || true
