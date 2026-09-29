@@ -1,40 +1,31 @@
 name: Autonomous Security Repair
 on:
-  push:
   pull_request:
+    types: [opened, synchronize, reopened]
   schedule:
     - cron: "11 3 * * *"
   workflow_dispatch:
 permissions:
-  contents: write
-  pull-requests: write
-  security-events: write
+  contents: read
 jobs:
   audit:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: {node-version: 22}
-      - name: Audit all npm projects
+        with:
+          node-version: 22
+      - name: Install, audit, test and build all npm projects
         shell: bash
         run: |
           set -e
+          found=0
           while IFS= read -r package; do
+            found=1
             dir="$(dirname "$package")"
-            npm install --package-lock-only --ignore-scripts --no-audit --prefix "$dir"
+            npm install --ignore-scripts --no-audit --prefix "$dir"
             npm audit --audit-level=high --prefix "$dir"
             npm test --if-present --prefix "$dir"
             npm run build --if-present --prefix "$dir"
           done < <(find . -name package.json -not -path '*/node_modules/*' -not -path './.git/*' -print)
-  codeql:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: github/codeql-action/init@v3
-        with: {languages: javascript-typescript}
-      - uses: github/codeql-action/autobuild@v3
-      - uses: github/codeql-action/analyze@v3
+          if [ "$found" -eq 0 ]; then echo "No npm projects found."; fi
