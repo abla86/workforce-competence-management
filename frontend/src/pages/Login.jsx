@@ -10,13 +10,10 @@ export default function Login({ onLogin }) {
   const [username, setUsername] = useState(DEMO_AUTO_LOGIN ? DEMO_USERNAME : "");
   const [password, setPassword] = useState(DEMO_AUTO_LOGIN ? DEMO_PASSWORD : "");
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(DEMO_AUTO_LOGIN);
+  const [busy, setBusy] = useState(DEMO_AUTO_LOGIN && Boolean(DEMO_USERNAME && DEMO_PASSWORD));
 
   useEffect(() => {
-    if (!DEMO_AUTO_LOGIN || !DEMO_USERNAME || !DEMO_PASSWORD) {
-      setBusy(false);
-      return;
-    }
+    if (!DEMO_AUTO_LOGIN || !DEMO_USERNAME || !DEMO_PASSWORD) return;
 
     let cancelled = false;
     api.login(DEMO_USERNAME, DEMO_PASSWORD)
