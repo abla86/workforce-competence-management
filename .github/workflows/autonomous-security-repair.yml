@@ -1,0 +1,51 @@
+name: Autonomous Security Repair
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "11 3 * * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+  security-events: write
+jobs:
+  dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Repair lockfiles and audit
+        shell: bash
+        run: |
+          set -e
+          while IFS= read -r package; do
+            dir="$(dirname "$package")"
+            npm install --package-lock-only --ignore-scripts --no-audit --prefix "$dir"
+            npm audit --audit-level=high --prefix "$dir"
+          done < <(find . -name package.json -not -path '*/node_modules/*' -not -path './.git/*' -print)
+      - name: Test and build
+        shell: bash
+        run: |
+          set +e
+          failed=0
+          while IFS= read -r package; do
+            dir="$(dirname "$package")"
+            npm test --if-present --prefix "$dir" || failed=1
+            npm run build --if-present --prefix "$dir" || failed=1
+          done < <(find . -name package.json -not -path '*/node_modules/*' -not -path './.git/*' -print)
+          exit "$failed"
+  codeql:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+      - uses: github/codeql-action/autobuild@v3
+      - uses: github/codeql-action/analyze@v3
