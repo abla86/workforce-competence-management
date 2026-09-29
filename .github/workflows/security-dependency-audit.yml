@@ -1,0 +1,27 @@
+name: Security Dependency Audit
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Audit npm projects
+        shell: bash
+        run: |
+          set -euo pipefail
+          found=0
+          while IFS= read -r package; do
+            found=1
+            dir="$(dirname "$package")"
+            npm install --package-lock-only --ignore-scripts --no-audit --prefix "$dir"
+            npm audit --audit-level=high --prefix "$dir"
+          done < <(find . -name package.json -not -path '*/node_modules/*' -not -path './.git/*' -print)
+          [ "$found" -eq 0 ] && echo "No npm projects found."
