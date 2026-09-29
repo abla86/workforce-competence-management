@@ -29,7 +29,7 @@ export default function Shifts({ shifts, employees, competences, api, mutate }) 
       if (error.status !== 409 || !error.body?.requiresOverride) throw error;
       const warnings = (error.body.warnings || []).join("\n");
       const reason = window.prompt(`Systemet har registrert arbeids-/hviletidsvarsler:\n\n${warnings}\n\nSkriv begrunnelse for å fortsette. Dette lagres i endringsloggen:`);
-      if (!reason?.trim()) throw new Error("Tildelingen ble ikke overstyrt. Begrunnelse er påkrevd.");
+      if (!reason?.trim()) throw new Error("Tildelingen ble ikke overstyrt. Begrunnelse er påkrevd.", { cause: error });
       await api.assignEmployee(current.id, id, reason.trim());
     }
   }
