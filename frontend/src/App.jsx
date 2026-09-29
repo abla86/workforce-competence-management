@@ -37,7 +37,17 @@ export default function App() {
     } finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { if (authenticated) reload(); }, [authenticated, reload]);
+  useEffect(() => {
+    if (authenticated) {
+      const timer = setTimeout(() => { void reload(); }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [authenticated, reload]);
+
+  const handleLogin = useCallback((nextUser) => {
+    setUser(nextUser);
+    setAuthenticated(true);
+  }, []);
 
   async function mutate(action, successMessage) {
     try { await action(); setNotice(successMessage); setError(""); await reload(); setTimeout(() => setNotice(""), 2500); }
@@ -50,7 +60,7 @@ export default function App() {
   }
 
   if (authLoading) return <div className="loading-state">Laster…</div>;
-  if (!authenticated) return <Login onLogin={(nextUser) => { setUser(nextUser); setAuthenticated(true); }} />;
+  if (!authenticated) return <Login onLogin={handleLogin} />;
 
   let content;
   if (loading && !dashboard) content = <div className="loading-state">Laster bemanningsdata…</div>;
