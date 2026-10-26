@@ -311,3 +311,12 @@ Portfolio: https://abla86.github.io/developer-portfolio/
 The project uses synthetic/demo data. Do not use real employee, health or other sensitive personal data in the portfolio deployment.
 
 The application provides decision support and transparent explanations. It must not be presented as an automated system for making employment, staffing or clinical decisions without appropriate human oversight and organisational validation.
+
+
+## Disclaimers and limitations
+
+- **Project status:** Features may be incomplete, experimental, or unverified. Confirm behavior against the current code, tests, and configuration before relying on it.
+- **No warranty:** Provided as-is, without guarantees of correctness, availability, security, or production readiness. Review and test changes before production use.
+- **Security and data:** Never commit credentials, API keys, personal information, or confidential data. Review permissions, external services, logging, retention, and dependency risks. Automated checks are not a complete security audit.
+- **Testing and deployment:** Passing tests or static checks does not prove all behavior is correct or deployment is safe. Verify functionality, access controls, dependencies, backups, monitoring, and operational requirements independently.
+- **Domain-specific limitation:** Workforce-planning software is decision support only. Verify all staffing, competence, working-time, rest-period, privacy and legal requirements with responsible personnel before operational use.
